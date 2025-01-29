@@ -6,6 +6,7 @@ Calculate the loss (cross entropy) fidelity metric for a Sparse Autoencoder (SAE
    then compares to the original and zero-ablation cross entropy to calculate
    the loss recovered metric.
 """
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -18,8 +19,9 @@ from interplm.esm.embed import shuffle_individual_parameters
 from interplm.sae.intervention import get_model_output
 
 
-def CE_for_orig_and_zero_ablation(esm_model, nnsight_model, tokenized_batches,
-                                  hidden_layer_idx, device):
+def CE_for_orig_and_zero_ablation(
+    esm_model, nnsight_model, tokenized_batches, hidden_layer_idx, device
+):
     """Calculate cross entropy for original and zero-ablated outputs."""
     orig_losses, zero_losses = [], []
 
@@ -32,24 +34,31 @@ def CE_for_orig_and_zero_ablation(esm_model, nnsight_model, tokenized_batches,
         )
 
         zero_logits, _ = get_model_output(
-            esm_model, nnsight_model, batch_tokens, batch_attn_mask,
-            hidden_layer_idx, torch.zeros_like(orig_hidden)
+            esm_model,
+            nnsight_model,
+            batch_tokens,
+            batch_attn_mask,
+            hidden_layer_idx,
+            torch.zeros_like(orig_hidden),
         )
 
-        orig_losses.extend(calculate_cross_entropy(
-            orig_logits, batch_tokens, batch_attn_mask))
-        zero_losses.extend(calculate_cross_entropy(
-            zero_logits, batch_tokens, batch_attn_mask))
+        orig_losses.extend(
+            calculate_cross_entropy(orig_logits, batch_tokens, batch_attn_mask)
+        )
+        zero_losses.extend(
+            calculate_cross_entropy(zero_logits, batch_tokens, batch_attn_mask)
+        )
 
     return np.mean(orig_losses), np.mean(zero_losses)
 
 
-def CE_from_sae_recon(esm_model, nnsight_model, tokenized_batches, hidden_layer_idx,
-                      sae_model, device):
+def CE_from_sae_recon(
+    esm_model, nnsight_model, tokenized_batches, hidden_layer_idx, sae_model, device
+):
     """Calculate cross entropy using SAE reconstructions."""
     sae_losses = []
 
-    for batch_tokens, batch_attn_mask in tqdm(tokenized_batches):
+    for batch_tokens, batch_attn_mask in tokenized_batches:
         batch_tokens = batch_tokens.to(device)
         batch_attn_mask = batch_attn_mask.to(device)
 
@@ -59,12 +68,17 @@ def CE_from_sae_recon(esm_model, nnsight_model, tokenized_batches, hidden_layer_
 
         reconstructions = sae_model(orig_hidden)
         sae_logits, _ = get_model_output(
-            esm_model, nnsight_model, batch_tokens, batch_attn_mask,
-            hidden_layer_idx, reconstructions
+            esm_model,
+            nnsight_model,
+            batch_tokens,
+            batch_attn_mask,
+            hidden_layer_idx,
+            reconstructions,
         )
 
-        sae_losses.extend(calculate_cross_entropy(
-            sae_logits, batch_tokens, batch_attn_mask))
+        sae_losses.extend(
+            calculate_cross_entropy(sae_logits, batch_tokens, batch_attn_mask)
+        )
 
     return np.mean(sae_losses)
 
@@ -108,13 +122,12 @@ def get_loss_recovery_fn(
     eval_seq_path: str,
     device: str,
     batch_size: int = 8,
-    corrupt: bool = False
+    corrupt: bool = False,
 ) -> callable:
     print("Prepping loss fidelity_fn")
     # Load the ESM model and alphabet
     _, alphabet = pretrained.load_model_and_alphabet(esm_model_name)
-    model = EsmForMaskedLM.from_pretrained(
-        f"facebook/{esm_model_name}").to(device)
+    model = EsmForMaskedLM.from_pretrained(f"facebook/{esm_model_name}").to(device)
 
     if corrupt:
         model = shuffle_individual_parameters(model)
@@ -131,7 +144,7 @@ def get_loss_recovery_fn(
     # Pre-tokenize and create batches
     tokenized_batches = []
     for i in range(0, len(data), batch_size):
-        batch_data = data[i: i + batch_size]
+        batch_data = data[i : i + batch_size]
         _, _, batch_tokens = batch_converter(batch_data)
         batch_mask = (batch_tokens != alphabet.padding_idx).to(int)
         tokenized_batches.append((batch_tokens, batch_mask))
@@ -174,8 +187,8 @@ def calculate_cross_entropy(model_output, batch_tokens, batch_attn_mask):
     losses = []
     for j, mask in enumerate(batch_attn_mask):
         length = mask.sum()
-        seq_logits = model_output[j, 1:length-1]
-        seq_tokens = batch_tokens[j, 1:length-1]
+        seq_logits = model_output[j, 1 : length - 1]
+        seq_tokens = batch_tokens[j, 1 : length - 1]
         loss = F.cross_entropy(seq_logits, seq_tokens)
         losses.append(loss.item())
     return losses

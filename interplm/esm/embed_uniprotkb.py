@@ -1,7 +1,10 @@
 from pathlib import Path
+
 import pandas as pd
 import torch
+
 from interplm.esm.embed import embed_list_of_prot_seqs
+
 
 def df_of_prot_seqs_to_pt(
     protein_df,
@@ -10,7 +13,7 @@ def df_of_prot_seqs_to_pt(
     layer: int,
     seq_col: str,
     toks_per_batch: int = 4096,
-    corrupt: bool = False
+    corrupt: bool = False,
 ):
     """
     Compute ESM embeddings for protein sequences in a DataFrame and save to disk.
@@ -46,12 +49,14 @@ def df_of_prot_seqs_to_pt(
     print(f"Embedding computation complete. Saved to {output_path}")
     return all_embeddings
 
+
 def embed_uniprotkb_shard(
-        input_file: Path,
-        output_file: Path,
-        layer: int,
-        esm_name: str = "esm2_t6_8M_UR50D",
-        corrupt: bool = False):
+    input_file: Path,
+    output_file: Path,
+    layer: int,
+    esm_name: str = "esm2_t6_8M_UR50D",
+    corrupt: bool = False,
+):
     """
     Embed protein sequences from a UniProtKB shard file.
 
@@ -69,23 +74,23 @@ def embed_uniprotkb_shard(
     output_dir = output_file.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     df = pd.read_csv(input_file, sep="\t").set_index("Entry")
-    print(f"Embedding {len(df)} proteins from Uniprot database using {
-          esm_name}...")
+    print(f"Embedding {len(df)} proteins from Uniprot database using {esm_name}...")
     df_of_prot_seqs_to_pt(
         protein_df=df,
         esm_name=esm_name,
         output_path=output_file,
         layer=layer,
         seq_col="Sequence",
-        corrupt=corrupt
+        corrupt=corrupt,
     )
+
 
 def embed_all_shards(
     input_dir: Path,
     output_dir: Path,
     layer: int,
     esm_name: str = "esm2_t6_8M_UR50D",
-    corrupt: bool = False
+    corrupt: bool = False,
 ):
     """
     Process and embed all UniProtKB shards in a directory.
@@ -105,9 +110,11 @@ def embed_all_shards(
             output_file=output_file,
             layer=layer,
             esm_name=esm_name,
-            corrupt=corrupt
+            corrupt=corrupt,
         )
+
 
 if __name__ == "__main__":
     from tap import tapify
+
     tapify(embed_all_shards)

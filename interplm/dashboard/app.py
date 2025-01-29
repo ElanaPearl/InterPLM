@@ -12,8 +12,12 @@ import streamlit as st
 from interplm.constants import DASHBOARD_CACHE_DIR
 from interplm.dashboard.colors import get_structure_palette_and_colormap
 from interplm.dashboard.feature_activation_vis import (
-    plot_activation_scatter, plot_activations_for_single_feat,
-    plot_structure_scatter, plot_umap_scatter, visualize_protein_feature)
+    plot_activation_scatter,
+    plot_activations_for_single_feat,
+    plot_structure_scatter,
+    plot_umap_scatter,
+    visualize_protein_feature,
+)
 from interplm.dashboard.help_notes import help_notes
 from interplm.dashboard.view_structures import view_single_protein
 from interplm.data_processing.utils import fetch_uniprot_sequence
@@ -25,6 +29,7 @@ from interplm.utils import get_device
 @dataclass
 class DashboardState:
     """Holds the state and configuration for the dashboard"""
+
     layer: int
     feature_id: int
     feature_activation_range: str
@@ -45,8 +50,7 @@ class ProteinFeatureVisualizer:
         """Load and cache the dashboard data"""
         dashboard_cache_path = DASHBOARD_CACHE_DIR / "dashboard_cache.pkl"
         protein_metadata_path = DASHBOARD_CACHE_DIR / "swiss-prot_metadata.tsv.gz"
-        protein_metadata = pd.read_csv(
-            protein_metadata_path, sep="\t", index_col=0)
+        protein_metadata = pd.read_csv(protein_metadata_path, sep="\t", index_col=0)
 
         with open(dashboard_cache_path, "rb") as f:
             dash_data = pickle.load(f)
@@ -58,83 +62,103 @@ class ProteinFeatureVisualizer:
         n_features = dash_data["SAE"].dict_size
 
         # Initialize session state for feature_id if not exists
-        if f'feature_id_{layer}' not in st.session_state:
-            st.session_state[f'feature_id_{layer}'] = dash_data.get(
-                "Default feature", 0)
+        if f"feature_id_{layer}" not in st.session_state:
+            st.session_state[f"feature_id_{layer}"] = dash_data.get(
+                "Default feature", 0
+            )
 
         # Get available features to sample from
         feats_to_sample = []
         if "Sig_concepts_per_feature" in dash_data.keys():
-            sig_concepts = dash_data["Sig_concepts_per_feature"].query(
-                "f1_per_domain > 0.5")["feature"].unique()
+            sig_concepts = (
+                dash_data["Sig_concepts_per_feature"]
+                .query("f1_per_domain > 0.5")["feature"]
+                .unique()
+            )
             if len(sig_concepts) > 0:
                 feats_to_sample.extend(sig_concepts)
         if "LLM Autointerp" in dash_data.keys():
             feats_to_sample.extend(
-                dash_data["LLM Autointerp"].query("Correlation > 0.5").index)
+                dash_data["LLM Autointerp"].query("Correlation > 0.5").index
+            )
         if len(feats_to_sample) == 0:
             feats_to_sample = list(range(n_features))
 
         # Create random feature button below the number input
         if st.sidebar.button("Select random feature"):
             # Update session state with random feature
-            st.session_state[f'feature_id_{layer}'] = int(
-                np.random.choice(feats_to_sample))
+            st.session_state[f"feature_id_{layer}"] = int(
+                np.random.choice(feats_to_sample)
+            )
 
         # Number input that uses and updates session state
         feature_id = st.sidebar.number_input(
             f"Or specify SAE feature number",
             min_value=0,
-            max_value=n_features-1,
+            max_value=n_features - 1,
             step=1,
-            value=st.session_state[f'feature_id_{layer}'],
-            key=f'feature_input_{layer}',
-            help=f"Enter a specific feature ID to explore (0 - {
-                n_features-1:,})"
+            value=st.session_state[f"feature_id_{layer}"],
+            key=f"feature_input_{layer}",
+            help=f"Enter a specific feature ID to explore (0 - {n_features-1:,})",
         )
 
         # Update session state if number input changes
-        st.session_state[f'feature_id_{layer}'] = feature_id
+        st.session_state[f"feature_id_{layer}"] = feature_id
 
         return feature_id
 
     def setup_sidebar(self) -> DashboardState:
         """Configure sidebar controls and return dashboard state"""
         st.sidebar.markdown(help_notes["overall"], unsafe_allow_html=True)
-        st.sidebar.markdown("## Select ESM Layer and Feature",
-                            help=help_notes["select_esm_layer"])
+        st.sidebar.markdown(
+            "## Select ESM Layer and Feature", help=help_notes["select_esm_layer"]
+        )
         available_layers = sorted(list(self.dash_data_all_layer.keys()))
         if len(available_layers) == 0:
             st.error("No data found. Please check the cache and try again.")
         elif len(available_layers) == 1:
             layer = available_layers[0]
         else:
-            layer = st.sidebar.selectbox("Select ESM embedding layer",
-                                         available_layers,
-                                         index=3 if 3 in available_layers else available_layers[0])
+            layer = st.sidebar.selectbox(
+                "Select ESM embedding layer",
+                available_layers,
+                index=3 if 3 in available_layers else 0,
+            )
 
         dash_data = self.dash_data_all_layer[layer]
         feature_id = self.select_feature(layer)
         st.sidebar.markdown("---")
         st.sidebar.markdown(
-            "## Visualize Feature Activation on Proteins", help=help_notes["vis_sidebar"])
+            "## Visualize Feature Activation on Proteins",
+            help=help_notes["vis_sidebar"],
+        )
 
         show_proteins = st.sidebar.button("View Protein Activations")
         st.sidebar.markdown(
-            "Customize the protein selection and visualization below. Defaults to max activated proteins (a):")
+            "Customize the protein selection and visualization below. Defaults to max activated proteins (a):"
+        )
 
         # Specify activation range
-        st.sidebar.markdown("### a) Select proteins by activation range",
-                            help="Select proteins based on how strongly they activate the feature.")
-        quantiles = [i for i, sublist in dash_data["Per_feature_quantile_examples"]
-                     [feature_id].items() if len(sublist) > 0]
+        st.sidebar.markdown(
+            "### a) Select proteins by activation range",
+            help="Select proteins based on how strongly they activate the feature.",
+        )
+        quantiles = [
+            i
+            for i, sublist in dash_data["Per_feature_quantile_examples"][
+                feature_id
+            ].items()
+            if len(sublist) > 0
+        ]
         available_ranges = ["Max"] + quantiles
         feature_activation_range = st.sidebar.selectbox(
-            "Select activation group", available_ranges, index=0)
+            "Select activation group", available_ranges, index=0
+        )
 
         # Number of proteins to visualize
         max_prot_ids = self._get_protein_ids(
-            dash_data, feature_id, feature_activation_range)
+            dash_data, feature_id, feature_activation_range
+        )
         n_possible = min(10, len(max_prot_ids))
         default_n = min(5, n_possible)
         if n_possible == 0:
@@ -143,45 +167,51 @@ class ProteinFeatureVisualizer:
         else:
             n_proteins = st.sidebar.slider(
                 "Number of proteins to visualize",
-                0, n_possible, default_n,
-                help="Maximum of 10 proteins can be shown"
+                0,
+                n_possible,
+                default_n,
+                help="Maximum of 10 proteins can be shown",
             )
 
         # Custom protein selection
-        st.sidebar.markdown("### b) Enter custom UniProt IDs",
-                            help=help_notes["uniprot"])
+        st.sidebar.markdown(
+            "### b) Enter custom UniProt IDs", help=help_notes["uniprot"]
+        )
         custom_ids = st.sidebar.text_area(
             "Enter Uniprot IDs",
             "",
-            placeholder="Add each Uniprot ID to a new line. These are slower as they fetch data from UniProt."
+            placeholder="Add each Uniprot ID to a new line. These are slower as they fetch data from UniProt.",
         )
 
         # Custom sequence selection
-        st.sidebar.markdown("### c) Enter custom protein sequences",
-                            help="Note: Custom sequences will not show the protein structure.")
+        st.sidebar.markdown(
+            "### c) Enter custom protein sequences",
+            help="Note: Custom sequences will not show the protein structure.",
+        )
         custom_sequences = st.sidebar.text_area(
             "Enter protein sequences",
             "",
-            placeholder="Add each protein sequence to a new line"
+            placeholder="Add each protein sequence to a new line",
         )
 
         add_highlight = st.sidebar.checkbox(
             "Highlight high activation residues",
             value=False,
-            help="Highlight residues with activations in the top 5% of the range"
+            help="Highlight residues with activations in the top 5% of the range",
         )
 
         if custom_ids and custom_sequences:
             st.warning(
-                "Please select either Uniprot IDs or custom sequences, not both.")
+                "Please select either Uniprot IDs or custom sequences, not both."
+            )
             st.stop()
 
         elif custom_ids:
-            custom_ids = [id.strip()
-                          for id in custom_ids.split("\n") if id.strip()]
+            custom_ids = [id.strip() for id in custom_ids.split("\n") if id.strip()]
         elif custom_sequences:
             custom_sequences = [
-                seq.strip() for seq in custom_sequences.split("\n") if seq.strip()]
+                seq.strip() for seq in custom_sequences.split("\n") if seq.strip()
+            ]
 
         return DashboardState(
             layer=layer,
@@ -191,7 +221,7 @@ class ProteinFeatureVisualizer:
             add_highlight=add_highlight,
             custom_uniprot_ids=custom_ids,
             custom_sequences=custom_sequences,
-            show_proteins=show_proteins
+            show_proteins=show_proteins,
         )
 
     def visualize_proteins(self, state: DashboardState):
@@ -200,24 +230,29 @@ class ProteinFeatureVisualizer:
 
         try:
             if state.custom_uniprot_ids:
-                proteins_to_viz = self._get_custom_proteins(
-                    state.custom_uniprot_ids)
+                proteins_to_viz = self._get_custom_proteins(state.custom_uniprot_ids)
 
                 if proteins_to_viz.empty:
                     st.warning(
-                        "No valid UniProt IDs found. Please check the IDs and try again.")
+                        "No valid UniProt IDs found. Please check the IDs and try again."
+                    )
                     return
             elif state.custom_sequences:
-                proteins_to_viz = pd.DataFrame({
-                    "Entry": [f"Custom Sequence {i+1}" for i in range(len(state.custom_sequences))],
-                    "Sequence": state.custom_sequences
-                })
+                proteins_to_viz = pd.DataFrame(
+                    {
+                        "Entry": [
+                            f"Custom Sequence {i+1}"
+                            for i in range(len(state.custom_sequences))
+                        ],
+                        "Sequence": state.custom_sequences,
+                    }
+                )
             else:
                 proteins_to_viz = self._get_proteins_by_activation(
                     dash_data,
                     state.feature_id,
                     state.feature_activation_range,
-                    state.n_proteins_to_show
+                    state.n_proteins_to_show,
                 )
                 if proteins_to_viz.empty:
                     st.warning("No proteins found that activate this feature.")
@@ -225,7 +260,8 @@ class ProteinFeatureVisualizer:
 
             color_range = self._get_color_range(state.feature_activation_range)
             structure_colormap_fn, palette_to_viz = get_structure_palette_and_colormap(
-                color_range)
+                color_range
+            )
 
             self._render_protein_visualizations(
                 proteins_to_viz,
@@ -234,7 +270,7 @@ class ProteinFeatureVisualizer:
                 state.add_highlight,
                 structure_colormap_fn,
                 palette_to_viz,
-                is_custom_seq=bool(state.custom_sequences)
+                is_custom_seq=bool(state.custom_sequences),
             )
         except Exception as e:
             st.error(f"Error visualizing proteins: {str(e)}")
@@ -244,10 +280,15 @@ class ProteinFeatureVisualizer:
         """Display feature-wide statistics section"""
         dash_data = self.dash_data_all_layer[layer]
 
-        st.header(f"Metrics on all SAE features from ESM layer {
-                  layer}", help=help_notes["metrics"])
-        st.markdown(f"**(Highlighting selected feature <span style='color: #00DDFF'>f/{
-                    feature_id}**</span>)", unsafe_allow_html=True, help="Feature and layer selection can be changed in the sidebar.")
+        st.header(
+            f"Metrics on all SAE features from ESM layer {layer}",
+            help=help_notes["metrics"],
+        )
+        st.markdown(
+            f"**(Highlighting selected feature <span style='color: #00DDFF'>f/{feature_id}**</span>)",
+            unsafe_allow_html=True,
+            help="Feature and layer selection can be changed in the sidebar.",
+        )
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -261,41 +302,52 @@ class ProteinFeatureVisualizer:
             self._display_swissprot_concepts(dash_data, feature_id, layer)
 
         st.markdown("---")
-        st.header(f"Details on f/{feature_id}",
-                  help=help_notes["feature_details"])
+        st.header(f"Details on f/{feature_id}", help=help_notes["feature_details"])
 
         self._display_feature_act_dist_and_concepts(dash_data, feature_id)
         st.markdown("---")
 
     def _display_feature_act_dist_and_concepts(self, dash_data: Dict, feature_id: int):
         # Check whether "LLM Autointerp" in dash_data.keys()
-        if "LLM Autointerp" in dash_data.keys() and feature_id in dash_data["LLM Autointerp"].index:
+        if (
+            "LLM Autointerp" in dash_data.keys()
+            and feature_id in dash_data["LLM Autointerp"].index
+        ):
             col3, col1, col2 = st.columns(3)
             with col3:
                 # write dash_data["LLM Autointerp"].loc[feature_id]
-                description_score = f"{
-                    dash_data['LLM Autointerp'].loc[feature_id]['Correlation']:.2f}"
-                st.subheader(f"**Language Model Summary for f/{feature_id} (score={
-                             description_score})**", help=help_notes["autointerp"])
-                st.write(
-                    f"{dash_data['LLM Autointerp'].loc[feature_id]['Summary']}")
+                description_score = (
+                    f"{dash_data['LLM Autointerp'].loc[feature_id]['Correlation']:.2f}"
+                )
+                st.subheader(
+                    f"**Language Model Summary for f/{feature_id} (score={description_score})**",
+                    help=help_notes["autointerp"],
+                )
+                st.write(f"{dash_data['LLM Autointerp'].loc[feature_id]['Summary']}")
         else:
             col1, col2 = st.columns(2)
         with col1:
-            st.subheader(f"**Feature Activation Distribution for f/{
-                         feature_id}**", help=help_notes["act_distribution"])
+            st.subheader(
+                f"**Feature Activation Distribution for f/{feature_id}**",
+                help=help_notes["act_distribution"],
+            )
             plot_of_feat_acts = plot_activations_for_single_feat(
                 dash_data["SAE_features"], feature_id
             )
             if plot_of_feat_acts is not None:
-                st.plotly_chart(plot_of_feat_acts, use_container_width=True, config={
-                                'displayModeBar': False})
+                st.plotly_chart(
+                    plot_of_feat_acts,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
             else:
                 st.write("No activations found for this feature in random sample.")
 
             with col2:
                 st.subheader(
-                    f"**Concepts Identified in f/{feature_id}**", help=help_notes["swissprot_per_feat"])
+                    f"**Concepts Identified in f/{feature_id}**",
+                    help=help_notes["swissprot_per_feat"],
+                )
                 concepts_for_feat = (
                     dash_data["Sig_concepts_per_feature"]
                     .query(f"f1_per_domain > 0.2 & feature == {feature_id}")
@@ -304,35 +356,51 @@ class ProteinFeatureVisualizer:
 
                 if len(concepts_for_feat) > 0:
                     concepts_for_feat = concepts_for_feat.drop_duplicates(
-                        "concept", keep="first")
-                    concepts_for_feat = concepts_for_feat[[
-                        "concept", "threshold_pct", "f1_per_domain",
-                        "precision", "recall_per_domain", "tp", "tp_per_domain", "fp"
-                    ]]
-                    concepts_for_feat.rename(columns={
-                        "concept": "Concept",
-                        "f1_per_domain": "F1",
-                        "precision": "Precision",
-                        "recall_per_domain": "Recall",
-                        "tp": "True Positives (per AA)",
-                        "tp_per_domain": "True Positives (per Domain)",
-                        "threshold_pct": "Threshold"
-                    }, inplace=True)
+                        "concept", keep="first"
+                    )
+                    concepts_for_feat = concepts_for_feat[
+                        [
+                            "concept",
+                            "threshold_pct",
+                            "f1_per_domain",
+                            "precision",
+                            "recall_per_domain",
+                            "tp",
+                            "tp_per_domain",
+                            "fp",
+                        ]
+                    ]
+                    concepts_for_feat.rename(
+                        columns={
+                            "concept": "Concept",
+                            "f1_per_domain": "F1",
+                            "precision": "Precision",
+                            "recall_per_domain": "Recall",
+                            "tp": "True Positives (per AA)",
+                            "tp_per_domain": "True Positives (per Domain)",
+                            "threshold_pct": "Threshold",
+                        },
+                        inplace=True,
+                    )
                     concepts_for_feat.set_index("Concept", inplace=True)
                     st.write(concepts_for_feat)
                 else:
                     st.write("No Swiss-Prot concepts found for this feature.")
 
-    def _get_protein_ids(self, dash_data: Dict, feature_id: int, activation_range: str) -> List[str]:
+    def _get_protein_ids(
+        self, dash_data: Dict, feature_id: int, activation_range: str
+    ) -> List[str]:
         """Get protein IDs based on activation range"""
         if activation_range == "Max":
             return list(dash_data["Per_feature_max_examples"][feature_id])
-        return list(dash_data["Per_feature_quantile_examples"][feature_id][activation_range])
+        return list(
+            dash_data["Per_feature_quantile_examples"][feature_id][activation_range]
+        )
 
     def _get_color_range(self, activation_range: str) -> Tuple[float, float, float]:
         """Get color range based on activation range"""
         if activation_range == "Max":
-            return (0, 0.4, .85)
+            return (0, 0.4, 0.85)
         try:
             range_value = float(activation_range[0])
             return (0, range_value / 2, range_value)
@@ -349,15 +417,10 @@ class ProteinFeatureVisualizer:
         return pd.DataFrame(metadata)
 
     def _get_proteins_by_activation(
-        self,
-        dash_data: Dict,
-        feature_id: int,
-        activation_range: str,
-        n_proteins: int
+        self, dash_data: Dict, feature_id: int, activation_range: str, n_proteins: int
     ) -> pd.DataFrame:
         """Get protein data based on activation range"""
-        protein_ids = self._get_protein_ids(
-            dash_data, feature_id, activation_range)
+        protein_ids = self._get_protein_ids(dash_data, feature_id, activation_range)
         if not protein_ids:
             return pd.DataFrame()  # Return empty DataFrame if no proteins found
         return self.protein_metadata.loc[protein_ids[:n_proteins]].reset_index()
@@ -370,15 +433,20 @@ class ProteinFeatureVisualizer:
         plot = plot_structure_scatter(
             df=struct_data,
             title="",
-            feature_to_highlight=feature_id if feature_id in struct_data.index else None
+            feature_to_highlight=(
+                feature_id if feature_id in struct_data.index else None
+            ),
         )
-        struct_v_seq_help = "When a feature activates on multiple amino acids in a protein," \
-            "are the activated positions close nearby eachother in 3D space? Are they nearby in " \
-            "the sequence? This compares these two ways of looking at features activation. If you "\
+        struct_v_seq_help = (
+            "When a feature activates on multiple amino acids in a protein,"
+            "are the activated positions close nearby eachother in 3D space? Are they nearby in "
+            "the sequence? This compares these two ways of looking at features activation. If you "
             "look features with structures:seq ratios, they are often interesting"
+        )
         st.subheader("**Structural vs Sequential**", help=struct_v_seq_help)
-        st.plotly_chart(plot, use_container_width=True,
-                        config={'displayModeBar': False})
+        st.plotly_chart(
+            plot, use_container_width=True, config={"displayModeBar": False}
+        )
 
     def _plot_activation_consistency(self, dash_data: Dict, feature_id: int):
         """Plot activation consistency scatter plot"""
@@ -391,29 +459,38 @@ class ProteinFeatureVisualizer:
             title="",
             xaxis_title="% of proteins with activation",
             yaxis_title="Avg % activated when present",
-            feature_to_highlight=feature_id
+            feature_to_highlight=feature_id,
         )
-        st.subheader("**Feature Activation Frequencies**",
-                     help="Shows the consistency of feature activation across and within proteins.")
-        st.plotly_chart(plot, use_container_width=True,
-                        config={'displayModeBar': False})
+        st.subheader(
+            "**Feature Activation Frequencies**",
+            help="Shows the consistency of feature activation across and within proteins.",
+        )
+        st.plotly_chart(
+            plot, use_container_width=True, config={"displayModeBar": False}
+        )
 
     def _plot_umap(self, dash_data: Dict, feature_id: int):
         """Plot UMAP visualization"""
         if "UMAP" not in dash_data:
             return
-        umap_data = dash_data["UMAP"].reset_index().rename(
-            columns={"index": "Feature"})
+        umap_data = dash_data["UMAP"].reset_index().rename(columns={"index": "Feature"})
         plot = plot_umap_scatter(
             umap_data,
-            feature_to_highlight=feature_id if feature_id in umap_data["Feature"] else None,
-            title=""
+            feature_to_highlight=(
+                feature_id if feature_id in umap_data["Feature"] else None
+            ),
+            title="",
         )
-        st.subheader("**UMAP of Feature Values**",
-                     help="All features in layer visualized in 2D based on a UMAP of their dictionary values. Coloring based on cluster assignment.")
-        st.plotly_chart(plot, use_container_width=True,
-                        help="UMAP visualization of feature values",
-                        config={'displayModeBar': False})
+        st.subheader(
+            "**UMAP of Feature Values**",
+            help="All features in layer visualized in 2D based on a UMAP of their dictionary values. Coloring based on cluster assignment.",
+        )
+        st.plotly_chart(
+            plot,
+            use_container_width=True,
+            help="UMAP visualization of feature values",
+            config={"displayModeBar": False},
+        )
 
     def _display_swissprot_concepts(self, dash_data: Dict, feature_id: int, layer: int):
         """Display SwissProt concepts table"""
@@ -426,8 +503,10 @@ class ProteinFeatureVisualizer:
             .drop_duplicates(["concept"], keep="first")
         )
 
-        st.subheader(f"**Concepts Identified in Layer {
-                     layer}**", help="Concepts are defined based on Swiss-Prot annotations. For each concept identified in the SAE features, we list one example feature that activates on this concept. Details on concept-feature pairing is described in the InterPLM paper.")
+        st.subheader(
+            f"**Concepts Identified in Layer {layer}**",
+            help="Concepts are defined based on Swiss-Prot annotations. For each concept identified in the SAE features, we list one example feature that activates on this concept. Details on concept-feature pairing is described in the InterPLM paper.",
+        )
         display_cols = {
             "concept": "Concept",
             "feature": "Feature",
@@ -438,9 +517,10 @@ class ProteinFeatureVisualizer:
         }
 
         st.dataframe(
-            concepts[list(display_cols.keys())].rename(
-                columns=display_cols).set_index("Concept"),
-            height=300
+            concepts[list(display_cols.keys())]
+            .rename(columns=display_cols)
+            .set_index("Concept"),
+            height=300,
         )
 
     def _render_protein_visualizations(
@@ -451,7 +531,7 @@ class ProteinFeatureVisualizer:
         add_highlight: bool,
         colormap_fn,
         palette_to_viz,
-        is_custom_seq: bool = False
+        is_custom_seq: bool = False,
     ):
         """Render visualizations for selected proteins"""
         for idx, (_, protein) in enumerate(proteins.iterrows()):
@@ -461,25 +541,34 @@ class ProteinFeatureVisualizer:
                     sequence=protein["Sequence"],
                     model_name=dash_data["ESM_metadata"]["esm_model_name"],
                     layer=dash_data["ESM_metadata"]["layer"],
-                    device=self.device
+                    device=self.device,
                 )
-                features = encode_subset_of_feats(dash_data["SAE"], embeddings, [
-                                                  feature_id]).cpu().numpy().flatten()
+                features = (
+                    encode_subset_of_feats(dash_data["SAE"], embeddings, [feature_id])
+                    .cpu()
+                    .numpy()
+                    .flatten()
+                )
 
                 # Display protein header
                 if is_custom_seq:
                     st.subheader(f"Custom Sequence {idx+1}")
                 else:
 
-                    st.subheader(f"UniProt protein ([{
-                                 protein['Entry']}](https://www.uniprot.org/uniprot/{protein['Entry']}))")
+                    st.subheader(
+                        f"UniProt protein ([{protein['Entry']}](https://www.uniprot.org/uniprot/{protein['Entry']}))"
+                    )
                     st.markdown(protein["Protein names"])
 
                 if idx == 0:
                     col1, col2, col3 = st.columns([3, 3, 1])
                     with col3:
-                        st.plotly_chart(palette_to_viz, use_container_width=True, height=100, config={
-                                        'displayModeBar': False})
+                        st.plotly_chart(
+                            palette_to_viz,
+                            use_container_width=True,
+                            height=100,
+                            config={"displayModeBar": False},
+                        )
                 else:
                     col1, col2 = st.columns([3, 5])
 
@@ -487,23 +576,26 @@ class ProteinFeatureVisualizer:
                 with col1:
                     st.plotly_chart(
                         visualize_protein_feature(
-                            features, protein["Sequence"], protein, "Amino Acids"),
+                            features, protein["Sequence"], protein, "Amino Acids"
+                        ),
                         use_container_width=True,
-                        config={'displayModeBar': False},
+                        config={"displayModeBar": False},
                     )
 
                 with col2:
                     if not is_custom_seq:
                         self._render_protein_structure(
-                            protein['Entry'],
+                            protein["Entry"],
                             features,
                             colormap_fn,
-                            [idx for idx, val in enumerate(
-                                features) if val > 0.4] if add_highlight else None
+                            (
+                                [idx for idx, val in enumerate(features) if val > 0.4]
+                                if add_highlight
+                                else None
+                            ),
                         )
             except Exception as e:
-                st.error(f"Error visualizing protein {
-                         protein['Entry']}: {str(e)}")
+                st.error(f"Error visualizing protein {protein['Entry']}: {str(e)}")
                 continue
 
     def _render_protein_structure(
@@ -511,7 +603,7 @@ class ProteinFeatureVisualizer:
         uniprot_id: str,
         features: np.ndarray,
         colormap_fn,
-        highlight_residues: Optional[List[int]] = None
+        highlight_residues: Optional[List[int]] = None,
     ):
         """Render 3D protein structure visualization"""
         try:
@@ -520,7 +612,7 @@ class ProteinFeatureVisualizer:
                 values_to_color=features,
                 colormap_fn=colormap_fn,
                 residues_to_highlight=highlight_residues,
-                pymol_params={"width": 500, "height": 300}
+                pymol_params={"width": 500, "height": 300},
             )
             st.components.v1.html(structure_html, height=300)
         except Exception as e:
@@ -528,13 +620,14 @@ class ProteinFeatureVisualizer:
 
 
 def main():
-    st.set_page_config(layout="wide",
-                       page_title="InterPLM",
-                       page_icon="🧬",
-                       )
+    st.set_page_config(
+        layout="wide",
+        page_title="InterPLM",
+        page_icon="🧬",
+    )
 
     with open(".streamlit/style.css") as f:
-        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
     st.title("InterPLM Feature Visualization")
 

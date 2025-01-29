@@ -15,8 +15,7 @@ from interplm.utils import get_device
 
 
 def load_model(
-    model_path: Union[str, Path],
-    device: Optional[str] = None
+    model_path: Union[str, Path], device: Optional[str] = None
 ) -> AutoEncoder:
     """
     Load a pretrained AutoEncoder model in inference mode.
@@ -38,7 +37,8 @@ def load_model(
 
     # Load state dict to the target device
     state_dict = torch.load(
-        model_path, map_location=torch.device(device), weights_only=True)
+        model_path, map_location=torch.device(device), weights_only=True
+    )
 
     # Extract architecture dimensions from the encoder weights
     dict_size, activation_dim = state_dict["encoder.weight"].shape
@@ -57,9 +57,7 @@ def load_model(
 
 
 def encode_subset_of_feats(
-    sae: AutoEncoder,
-    esm_embds: Tensor,
-    feat_list: List[int]
+    sae: AutoEncoder, esm_embds: Tensor, feat_list: List[int]
 ) -> Tensor:
     """
     Encode a batch of embeddings using a subset of features from the SAE.
@@ -72,8 +70,8 @@ def encode_subset_of_feats(
     """
     with torch.no_grad():
         features = torch.nn.ReLU()(
-            ((esm_embds - sae.bias) @ sae.encoder.weight[feat_list, :].T) +
-            sae.encoder.bias[feat_list]
+            ((esm_embds - sae.bias) @ sae.encoder.weight[feat_list, :].T)
+            + sae.encoder.bias[feat_list]
         )
     return features
 
@@ -83,7 +81,7 @@ def get_sae_feats_in_batches(
     device: str,
     esm_embds: np.ndarray,
     chunk_size: int,
-    feat_list: Optional[List[int]] = None
+    feat_list: Optional[List[int]] = None,
 ) -> Tensor:
     """
     Process large embedding arrays in chunks to generate SAE features.
@@ -106,14 +104,17 @@ def get_sae_feats_in_batches(
         feat_list = list(range(sae.dict_size))
 
     # Convert input to tensor on specified device
-    esm_embds = esm_embds.to(device) if torch.is_tensor(
-        esm_embds) else torch.tensor(esm_embds, device=device)
+    esm_embds = (
+        esm_embds.to(device)
+        if torch.is_tensor(esm_embds)
+        else torch.tensor(esm_embds, device=device)
+    )
 
     all_features = []
 
     # Process in chunks with progress bar
     for i in range(0, len(esm_embds), chunk_size):
-        chunk = esm_embds[i: i + chunk_size]
+        chunk = esm_embds[i : i + chunk_size]
         features = encode_subset_of_feats(sae, chunk, feat_list)
         all_features.append(features)
 

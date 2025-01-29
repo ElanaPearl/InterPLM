@@ -10,10 +10,26 @@ from Bio.PDB import PDBIO, PDBList, PDBParser
 from interplm.constants import PDB_DIR
 
 aa_3to1 = {
-    'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F',
-    'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LYS': 'K', 'LEU': 'L',
-    'MET': 'M', 'ASN': 'N', 'PRO': 'P', 'GLN': 'Q', 'ARG': 'R',
-    'SER': 'S', 'THR': 'T', 'VAL': 'V', 'TRP': 'W', 'TYR': 'Y'
+    "ALA": "A",
+    "CYS": "C",
+    "ASP": "D",
+    "GLU": "E",
+    "PHE": "F",
+    "GLY": "G",
+    "HIS": "H",
+    "ILE": "I",
+    "LYS": "K",
+    "LEU": "L",
+    "MET": "M",
+    "ASN": "N",
+    "PRO": "P",
+    "GLN": "Q",
+    "ARG": "R",
+    "SER": "S",
+    "THR": "T",
+    "VAL": "V",
+    "TRP": "W",
+    "TYR": "Y",
 }
 
 
@@ -23,9 +39,11 @@ def parse_pdb_line(line):
         residue_num = line[22:26].strip()
         residue_3 = line[17:20].strip()
         x, y, z = line[30:38].strip(), line[38:46].strip(), line[46:54].strip()
-        return {"residue_num": int(residue_num) - 1,
-                "residue_letter": aa_3to1.get(residue_3, 'X'),
-                "coords": (float(x), float(y), float(z))}
+        return {
+            "residue_num": int(residue_num) - 1,
+            "residue_letter": aa_3to1.get(residue_3, "X"),
+            "coords": (float(x), float(y), float(z)),
+        }
     return None
 
 
@@ -48,8 +66,7 @@ def get_single_chain_afdb_structure(uniprot_id: str):
     # Check if the file already exists
     if not os.path.exists(pdb_file_path):
         # If it doesn't exist, download it
-        afdb_path = f"https://alphafold.ebi.ac.uk/files/AF-{
-            uniprot_id}-F1-model_v4.pdb"
+        afdb_path = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb"
 
         # Download the structure using requests
         try:
@@ -80,8 +97,7 @@ def get_pdb_info_as_string_from_afdb(uniprot_id: str):
     # Check if the file already exists
     if not os.path.exists(pdb_file_path):
         # If it doesn't exist, download it
-        afdb_path = f"https://alphafold.ebi.ac.uk/files/AF-{
-            uniprot_id}-F1-model_v4.pdb"
+        afdb_path = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb"
 
         # Download the structure using requests
         try:
@@ -144,8 +160,7 @@ def view_single_protein(
     elif pdb_id is not None and chain_id is not None:
         pdb_struct = get_single_chain_pdb_structure(pdb_id, chain_id)
     else:
-        raise ValueError(
-            "Either pdb_id and chain_id or uniprot_id must be provided.")
+        raise ValueError("Either pdb_id and chain_id or uniprot_id must be provided.")
 
     pdb_data = structure_to_seq(pdb_struct)
     residues = pdb_struct.get_residues()
@@ -170,8 +185,8 @@ def view_single_protein(
         residue_type = residue.get_resname()
 
         view.setStyle(
-            {"chain": chain_id, "resi": res_id_in_pdb}, {
-                "cartoon": {"color": color, "opacity": opacity}}
+            {"chain": chain_id, "resi": res_id_in_pdb},
+            {"cartoon": {"color": color, "opacity": opacity}},
         )
 
         if residues_to_highlight and res_id_in_seq in residues_to_highlight:
@@ -181,8 +196,12 @@ def view_single_protein(
             )
             view.addLabel(
                 f"{residue_type}",  # {res_id_in_pdb}",
-                {"fontOpacity": 1, "backgroundOpacity": 0.0,
-                    "fontSize": 20, "fontColor": highlight_color},
+                {
+                    "fontOpacity": 1,
+                    "backgroundOpacity": 0.0,
+                    "fontSize": 20,
+                    "fontColor": highlight_color,
+                },
                 {"chain": chain_id, "resi": res_id_in_pdb},
             )
 

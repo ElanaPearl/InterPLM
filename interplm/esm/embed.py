@@ -13,7 +13,12 @@ from transformers import AutoTokenizer, EsmForMaskedLM
 from interplm.utils import get_device
 
 
-def get_model_converter_alphabet(esm_model_name: str, corrupt: bool = False, truncation_seq_length: int = 1022):
+def get_model_converter_alphabet(
+    esm_model_name: str,
+    corrupt: bool = False,
+    truncation_seq_length: int = 1022,
+    device: str | None = None,
+):
     """
     Initialize ESM model, batch converter, and alphabet for protein sequence processing.
 
@@ -28,10 +33,11 @@ def get_model_converter_alphabet(esm_model_name: str, corrupt: bool = False, tru
             - batch_converter: Function to convert sequences to model inputs
             - alphabet: ESM alphabet object for token conversion
     """
-    device = get_device()
+    if device is None:
+        device = get_device()
+
     _, alphabet = pretrained.load_model_and_alphabet(esm_model_name)
-    model = EsmForMaskedLM.from_pretrained(
-        f"facebook/{esm_model_name}").to(device)
+    model = EsmForMaskedLM.from_pretrained(f"facebook/{esm_model_name}").to(device)
     model.eval()
 
     if corrupt:
@@ -74,7 +80,7 @@ def embed_list_of_prot_seqs(
     toks_per_batch: int = 4096,
     truncation_seq_length: int = None,
     device: torch.device = None,
-    corrupt: bool = False
+    corrupt: bool = False,
 ) -> List[np.ndarray]:
     """
     Generate ESM embeddings for a list of protein sequences in batches.
@@ -96,8 +102,8 @@ def embed_list_of_prot_seqs(
 
     # Load ESM model
     model, batch_converter, alphabet = get_model_converter_alphabet(
-        esm_model_name, corrupt, truncation_seq_length)
-
+        esm_model_name, corrupt, truncation_seq_length, device=device
+    )
     # Create FastaBatchedDataset
     labels = [f"protein_{i}" for i in range(len(protein_seq_list))]
     dataset = FastaBatchedDataset(labels, protein_seq_list)
@@ -119,16 +125,19 @@ def embed_list_of_prot_seqs(
         toks = toks.to(device)
 
         with torch.no_grad():
-            results = model(toks, attention_mask=(
-                toks != alphabet.padding_idx), output_hidden_states=True)
+            results = model(
+                toks,
+                attention_mask=(toks != alphabet.padding_idx),
+                output_hidden_states=True,
+            )
             embeddings = results.hidden_states[layer]
 
         # Remove padding and special tokens, and store in the correct position
         for i, (label, seq) in enumerate(zip(labels, strs)):
             seq_len = len(seq)
             # Extract original index from label
-            seq_idx = int(label.split('_')[1])
-            all_embeddings[seq_idx] = embeddings[i, 1:seq_len+1]
+            seq_idx = int(label.split("_")[1])
+            all_embeddings[seq_idx] = embeddings[i, 1 : seq_len + 1]
 
         total_tokens += embeddings.shape[0] * embeddings.shape[1]
 
@@ -136,16 +145,14 @@ def embed_list_of_prot_seqs(
 
     # Verify that all sequences have been processed
     assert all(
-        emb is not None for emb in all_embeddings), "Some sequences were not processed"
+        emb is not None for emb in all_embeddings
+    ), "Some sequences were not processed"
 
     return all_embeddings
 
 
 def embed_single_sequence(
-    sequence: str,
-    model_name: str,
-    layer: int,
-    device: torch.device = None
+    sequence: str, model_name: str, layer: int, device: torch.device = None
 ) -> torch.Tensor:
     """
     Embed a single protein sequence using ESM model.

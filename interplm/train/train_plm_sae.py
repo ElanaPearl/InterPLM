@@ -23,39 +23,32 @@ def train_SAE_on_PLM_embeds(
     # Data paths and sources
     plm_embd_dir: Path,
     eval_seq_path: Path | None = None,
-
     # Core model architecture
     expansion_factor: int = 8,
-
     # Training configuration
     batch_size: int = 32,
     steps: int = 1_000,
     seed: int = 0,
-
     # Optimization parameters
     lr: float = 1e-3,
     warmup_steps: int = 50,
     resample_steps: int = 0,  # 0 to disable
-
     # Regularization
     l1_penalty: float = 1e-1,
     l1_annealing_pct: float = 0.05,
-
     # Evaluation settings
     eval_batch_size: int = 128,
     eval_steps: int = 1_000,
-
     # Logging and checkpointing
     save_dir: str = "models",
     log_steps: int = 100,
     save_steps: int = 50,
     max_ckpts_to_keep: int = 3,
-
     # Weights & Biases configuration
     use_wandb: bool = False,
     wandb_entity: str = "",
     wandb_project: str = "test_logging",
-    wandb_name: str = "SAE"
+    wandb_name: str = "SAE",
 ):
     """
     Train a Sparse Autoencoder (SAE) using cached activation data from a language model.
@@ -103,9 +96,7 @@ def train_SAE_on_PLM_embeds(
         return torch.stack(batch).to(device)
 
     # Initialize dataset and dataloader
-    acts_dataset = LazyMultiDirectoryTokenDataset(
-        plm_embd_dir
-    )
+    acts_dataset = LazyMultiDirectoryTokenDataset(plm_embd_dir)
 
     # Determine layer from dataset metadata
     layer = acts_dataset.datasets[0]["layer"]
@@ -135,7 +126,7 @@ def train_SAE_on_PLM_embeds(
         layer=layer,
         plm_name=plm_name,
         device=device,
-        steps=min(steps, len(dataloader))
+        steps=min(steps, len(dataloader)),
     )
     print(f"Training with config: {trainer.config}")
 
@@ -156,17 +147,14 @@ def train_SAE_on_PLM_embeds(
         # Core training components
         data=dataloader,
         trainer=trainer,
-
         # Evaluation settings
         fidelity_fn=fidelity_fn,
         eval_steps=eval_steps,
-
         # Logging and checkpointing
         save_dir=save_dir,
         log_steps=log_steps,
         save_steps=save_steps,
         max_ckpts_to_keep=3,
-
         # Weights & Biases configuration
         use_wandb=use_wandb,
         wandb_entity=wandb_entity,
@@ -182,4 +170,5 @@ def train_SAE_on_PLM_embeds(
 
 if __name__ == "__main__":
     from tap import tapify
+
     tapify(train_SAE_on_PLM_embeds)

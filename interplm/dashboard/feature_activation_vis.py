@@ -13,8 +13,7 @@ CYAN_SHADE = "#00DDFF"
 def generate_color_palette(unique_tokens):
     n_colors = len(unique_tokens)
     colors = plt.cm.tab20(np.linspace(0, 1, n_colors))
-    aa_to_color = {aa: tuple(color)
-                   for aa, color in zip(unique_tokens, colors)}
+    aa_to_color = {aa: tuple(color) for aa, color in zip(unique_tokens, colors)}
     return aa_to_color
 
 
@@ -22,7 +21,11 @@ aa_to_color = generate_color_palette("ACDEFGHIKLMNPQRSTVWY")
 
 
 def visualize_protein_feature(
-    feature_acts, sequence, metadata, characteristic_to_plot="Amino Acids", ss_to_full_name=None
+    feature_acts,
+    sequence,
+    metadata,
+    characteristic_to_plot="Amino Acids",
+    ss_to_full_name=None,
 ):
     # if feature acts is a torch convert to numpy
     if hasattr(feature_acts, "detach"):
@@ -32,29 +35,34 @@ def visualize_protein_feature(
 
     # Precompute all colors
     colors = [aa_to_color.get(aa, (200, 200, 200, 1)) for aa in sequence]
-    color_strs = [f"rgba({int(c[0]*255)},{int(c[1]*255)
-                                          },{int(c[2]*255)},{c[3]})" for c in colors]
+    color_strs = [
+        f"rgba({int(c[0]*255)},{int(c[1]*255)},{int(c[2]*255)},{c[3]})" for c in colors
+    ]
 
     for j, (aa, feat) in enumerate(zip(sequence, feature_acts)):
-        fig.add_trace(go.Scatter(
-            x=[j, j],
-            y=[0, feat],
-            mode="lines",
-            line=dict(color="lightgray", width=0.5),
-            showlegend=False,
-            hoverinfo="skip"
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[j, j],
+                y=[0, feat],
+                mode="lines",
+                line=dict(color="lightgray", width=0.5),
+                showlegend=False,
+                hoverinfo="skip",
+            )
+        )
 
-        fig.add_trace(go.Scatter(
-            x=[j],
-            y=[feat],
-            mode="text",
-            text=[aa],
-            textfont=dict(size=20, color=color_strs[j]),
-            showlegend=False,
-            hoverinfo="text",
-            hovertext=f"AA: {aa}<br>Position: {j}<br>Activation: {feat:.2f}",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[j],
+                y=[feat],
+                mode="text",
+                text=[aa],
+                textfont=dict(size=20, color=color_strs[j]),
+                showlegend=False,
+                hoverinfo="text",
+                hovertext=f"AA: {aa}<br>Position: {j}<br>Activation: {feat:.2f}",
+            )
+        )
 
     fig.update_layout(
         xaxis_title="Sequence Position",
@@ -64,21 +72,15 @@ def visualize_protein_feature(
         height=300,
         width=None,
         showlegend=True,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='white'),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white"),
         legend=dict(
-            bgcolor='rgba(0,0,0,0)',
-            bordercolor='rgba(255,255,255,0.3)',
-            font=dict(color='white')
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(255,255,255,0.3)",
+            font=dict(color="white"),
         ),
-        margin=dict(
-            l=0,
-            r=0,
-            t=0,
-            b=0
-        ),
-
+        margin=dict(l=0, r=0, t=0, b=0),
     )
     fig.update_xaxes(showgrid=False, zeroline=False)
     fig.update_yaxes(showgrid=False, zeroline=False)
@@ -101,12 +103,7 @@ def plot_activations_for_single_feat(feat_acts, feature_to_show):
         showlegend=False,
         height=300,
         width=None,
-        margin=dict(
-            l=20,
-            r=20,
-            t=0,
-            b=0
-        ),
+        margin=dict(l=20, r=20, t=0, b=0),
     )
     return fig
 
@@ -138,8 +135,7 @@ def plot_activation_histogram(
 
     # Create hover text
     hover_text = [
-        f"{x_title.capitalize()}: {
-            bin_edges[i]:.2f} - {bin_edges[i+1]:.2f}<br>"
+        f"{x_title.capitalize()}: {bin_edges[i]:.2f} - {bin_edges[i+1]:.2f}<br>"
         f"Count: {count} features<br>"
         f"Example feat idx: {features}"
         for i, (count, features) in enumerate(zip(hist, example_feats))
@@ -249,8 +245,7 @@ def plot_activation_histogram(
             x=highlight_value,
             line=dict(dash="dash", color=feature_highlight_color),
             annotation_text=annotation_text,
-            annotation_position=("top right" if quantile <
-                                 0.5 else "top left"),
+            annotation_position=("top right" if quantile < 0.5 else "top left"),
         )
 
     return fig
@@ -295,12 +290,7 @@ def plot_activation_scatter(
         showlegend=False,
         height=300,
         width=None,
-        margin=dict(
-            l=20,
-            r=20,
-            t=0,
-            b=0
-        ),
+        margin=dict(l=20, r=20, t=0, b=0),
         autosize=True,
     )
 
@@ -317,8 +307,7 @@ def plot_activation_scatter(
                 marker=dict(size=15, color=CYAN_SHADE),
                 showlegend=False,
                 hoverinfo="text",
-                text=[get_hover_text(feature_to_highlight,
-                                     highlight_x, highlight_y)],
+                text=[get_hover_text(feature_to_highlight, highlight_x, highlight_y)],
             ),
         )
 
@@ -336,40 +325,42 @@ def plot_structure_scatter(
     df["structural_cohen"] = df["structural_cohen"].apply(lambda x: abs(x))
 
     def get_hover_text(feature_id, row):
-        difference = row['structural_cohen'] / row['sequential_cohen']
-        return (f"<b>f/{feature_id}</b><br>"
-                f"Structural / Sequential: {difference:.2f}<br>")
+        difference = row["structural_cohen"] / row["sequential_cohen"]
+        return (
+            f"<b>f/{feature_id}</b><br>"
+            f"Structural / Sequential: {difference:.2f}<br>"
+        )
 
     # Calculate difference for coloring
-    differences = df['structural_cohen'] / df['sequential_cohen']
+    differences = df["structural_cohen"] / df["sequential_cohen"]
     # differences = differences.apply(lambda x: min(max(0, x), 5))
 
     # Custom colorscale centered around 0 (where structural = sequential)
     custom_colorscale = [
-        [0, "#FFFFFF"],      # Negative difference (structural < sequential)
-        [1, PINK_SHADE]  # Positive difference (structural > sequential)
+        [0, "#FFFFFF"],  # Negative difference (structural < sequential)
+        [1, PINK_SHADE],  # Positive difference (structural > sequential)
     ]
 
     fig = go.Figure()
 
     # Add diagonal line y=x
-    min_val = min(df['sequential_cohen'].min(), df['structural_cohen'].min())
-    max_val = max(df['sequential_cohen'].max(), df['structural_cohen'].max())
+    min_val = min(df["sequential_cohen"].min(), df["structural_cohen"].min())
+    max_val = max(df["sequential_cohen"].max(), df["structural_cohen"].max())
     fig.add_trace(
         go.Scatter(
             x=[min_val, max_val],
             y=[min_val, max_val],
-            mode='lines',
-            line=dict(color='gray', dash='dash'),
-            name='y=x',
+            mode="lines",
+            line=dict(color="gray", dash="dash"),
+            name="y=x",
             showlegend=False,
         )
     )
 
     fig.add_trace(
         go.Scatter(
-            x=df['sequential_cohen'],
-            y=df['structural_cohen'],
+            x=df["sequential_cohen"],
+            y=df["structural_cohen"],
             mode="markers",
             marker=dict(
                 size=5,
@@ -385,10 +376,7 @@ def plot_structure_scatter(
                     tickformat=".2f",  # Decimal format for colorbar
                 ),
             ),
-            text=[
-                get_hover_text(i, row)
-                for i, row in df.iterrows()
-            ],
+            text=[get_hover_text(i, row) for i, row in df.iterrows()],
             hoverinfo="text",
         )
     )
@@ -400,12 +388,7 @@ def plot_structure_scatter(
         showlegend=False,
         height=300,
         width=None,
-        margin=dict(
-            l=20,
-            r=20,
-            t=0,
-            b=0
-        ),
+        margin=dict(l=20, r=20, t=0, b=0),
         autosize=True,
     )
 
@@ -414,8 +397,8 @@ def plot_structure_scatter(
         highlight_row = df.loc[feature_to_highlight]
         fig.add_trace(
             go.Scatter(
-                x=[highlight_row['sequential_cohen']],
-                y=[highlight_row['structural_cohen']],
+                x=[highlight_row["sequential_cohen"]],
+                y=[highlight_row["structural_cohen"]],
                 mode="markers",
                 marker=dict(size=15, color=CYAN_SHADE),
                 showlegend=False,
@@ -435,47 +418,47 @@ def plot_umap_scatter(
     feature_to_highlight=None,
 ):
     plot_df = df.copy()
-    plot_df['cluster'] = plot_df['cluster'].astype(str)
+    plot_df["cluster"] = plot_df["cluster"].astype(str)
 
     # Create empty figure
     fig = go.Figure()
 
     # Create color mapping - make sure we have enough colors
-    n_clusters = len(plot_df['cluster'].unique())
-    colors = ['lightgray'] + px.colors.sample_colorscale("hsv", n_clusters)
+    n_clusters = len(plot_df["cluster"].unique())
+    colors = ["lightgray"] + px.colors.sample_colorscale("hsv", n_clusters)
 
     # Add traces for each cluster
-    for cluster in plot_df['cluster'].unique():
-        cluster_data = plot_df[plot_df['cluster'] == cluster]
+    for cluster in plot_df["cluster"].unique():
+        cluster_data = plot_df[plot_df["cluster"] == cluster]
 
-        if cluster == '-1':
+        if cluster == "-1":
             marker_size = 3
-            marker_color = 'lightgray'
+            marker_color = "lightgray"
         else:
             marker_size = 4
-            cluster_idx = list(
-                sorted(plot_df['cluster'].unique())).index(cluster)
+            cluster_idx = list(sorted(plot_df["cluster"].unique())).index(cluster)
             marker_color = colors[cluster_idx]
 
         # Create hover text combining Feature and Concept
-        hover_text = [f"<b>f/{feat}</b><br>Concept: {conc}"
-                      for feat, conc in zip(cluster_data['Feature'],
-                                            cluster_data['concept'])]
+        hover_text = [
+            f"<b>f/{feat}</b><br>Concept: {conc}"
+            for feat, conc in zip(cluster_data["Feature"], cluster_data["concept"])
+        ]
 
         fig.add_trace(
             go.Scatter(
-                x=cluster_data['UMAP 0'],
-                y=cluster_data['UMAP 1'],
-                mode='markers',
+                x=cluster_data["UMAP 0"],
+                y=cluster_data["UMAP 1"],
+                mode="markers",
                 marker=dict(
                     size=marker_size,
                     color=marker_color,
                 ),
                 opacity=0.6,
                 text=hover_text,
-                hoverinfo='text',
+                hoverinfo="text",
                 showlegend=False,
-                name=cluster
+                name=cluster,
             )
         )
 
@@ -485,18 +468,18 @@ def plot_umap_scatter(
         # Add main highlight point
         fig.add_trace(
             go.Scatter(
-                x=[highlight_row['UMAP 0']],
-                y=[highlight_row['UMAP 1']],
+                x=[highlight_row["UMAP 0"]],
+                y=[highlight_row["UMAP 1"]],
                 mode="markers",
                 marker=dict(
                     size=15,
                     color=CYAN_SHADE,
                     # line=dict(width=2, color='white'),
                 ),
-                text=[highlight_row['Feature']],
-                hoverinfo='text',
+                text=[highlight_row["Feature"]],
+                hoverinfo="text",
                 showlegend=False,
-                name='highlight'
+                name="highlight",
             )
         )
 
@@ -505,12 +488,7 @@ def plot_umap_scatter(
         showlegend=False,
         height=300,
         width=None,
-        margin=dict(
-            l=20,
-            r=20,
-            t=0,
-            b=0
-        ),
+        margin=dict(l=20, r=20, t=0, b=0),
         autosize=True,
         xaxis=dict(
             showticklabels=False,
@@ -522,7 +500,7 @@ def plot_umap_scatter(
             showgrid=False,
             zeroline=False,
         ),
-        hovermode='closest'
+        hovermode="closest",
     )
 
     return fig

@@ -22,17 +22,22 @@ import pandas as pd
 from scipy import sparse
 from tap import tapify
 
-from interplm.concept.uniprotkb_concept_constants import (aa_map,
-                                                          binary_meta_cols,
-                                                          categorical_concepts,
-                                                          paired_binary_cols)
+from interplm.concept.uniprotkb_concept_constants import (
+    aa_map,
+    binary_meta_cols,
+    categorical_concepts,
+    paired_binary_cols,
+)
 from interplm.concept.uniprotkb_parsing_utils import (
-    process_binary_feature, process_categorical_feature,
-    process_interaction_feature)
+    process_binary_feature,
+    process_categorical_feature,
+    process_interaction_feature,
+)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -44,10 +49,9 @@ def add_sequence_features(row: pd.Series) -> pd.Series:
     return row
 
 
-def analyze_categorical_features(df: pd.DataFrame,
-                                 category: str,
-                                 category_name: str,
-                                 separator_name: str = "note") -> Tuple[int, pd.Series, List[int], pd.Series]:
+def analyze_categorical_features(
+    df: pd.DataFrame, category: str, category_name: str, separator_name: str = "note"
+) -> Tuple[int, pd.Series, List[int], pd.Series]:
     """
     Analyze categorical features to find common categories and their statistics.
 
@@ -65,8 +69,8 @@ def analyze_categorical_features(df: pd.DataFrame,
         for entry in entries:
             # Extract note
             note_start = entry.find(separator_name)
-            note = entry[note_start + len(separator_name) + 1:]
-            note_end = note.find(';')
+            note = entry[note_start + len(separator_name) + 1 :]
+            note_end = note.find(";")
             note = note[:note_end].strip('"')
 
             if "/evidence" not in note:
@@ -76,14 +80,13 @@ def analyze_categorical_features(df: pd.DataFrame,
                 # Extract length
                 location = entry[1:]
                 end_of_loc = location.find(";")
-                location = location[:end_of_loc] if end_of_loc != - \
-                    1 else location
+                location = location[:end_of_loc] if end_of_loc != -1 else location
 
                 if ":" in location or "?" in location:
                     continue
 
                 if ".." in location:
-                    start, end = location.split('..')
+                    start, end = location.split("..")
                     start = int(start.strip("<"))
                     end = int(end.strip(">"))
                     all_lengths.append(end - start)
@@ -97,14 +100,16 @@ def analyze_categorical_features(df: pd.DataFrame,
         len(non_na),
         n_per_prot.sort_values(ascending=False),
         all_lengths,
-        pd.Series(all_notes).value_counts()
+        pd.Series(all_notes).value_counts(),
     )
 
 
-def expand_features(df: pd.DataFrame,
-                    categorical_column_options: Dict[str, List[str]],
-                    binary_cols: List[str],
-                    interaction_cols: List[str]) -> Tuple[pd.DataFrame, List[str]]:
+def expand_features(
+    df: pd.DataFrame,
+    categorical_column_options: Dict[str, List[str]],
+    binary_cols: List[str],
+    interaction_cols: List[str],
+) -> Tuple[pd.DataFrame, List[str]]:
     """
     Expand all protein features to amino acid level.
     """
@@ -112,17 +117,25 @@ def expand_features(df: pd.DataFrame,
 
     # Process categorical features
     for col, category_options in categorical_column_options.items():
+        # Initialize current index for each category
         current_index = {cat: 1 for cat in category_options}
         logger.info(f"Processing categorical column: {col}")
 
         # Handle case where this shard has no data for this column
         if df[col].isnull().all():
             for category_option in category_options:
-                new_columns[f"{col}_{category_option}"] = df["Length"].apply(lambda x: [False] * x)
+                new_columns[f"{col}_{category_option}"] = df["Length"].apply(
+                    lambda x: [False] * x
+                )
 
         else:
-
+            # Each column has a short name separator (e.g. ACT_SITE for Active Site column)
             col_name = df[col].dropna().iloc[0].split(" ")[0]
+
+            # For each row, extract all sub-categories and instead of just using 0,1 to indicate
+            # presence, use a counter to keep track of the number of times a sub-category appears
+            # and every amino acid within one occurance gets the same index so that later, if a
+            # concept appears multiple times, we can distinguish the various instances / domains.
             for _, row in df.iterrows():
                 results, current_index = process_categorical_feature(
                     row[col], col_name, category_options, row["Length"], current_index
@@ -148,18 +161,16 @@ def expand_features(df: pd.DataFrame,
 
         col_name = df[col].dropna().iloc[0].split(" ")[0]
         for _, row in df.iterrows():
-            indices, _ = process_interaction_feature(
-                row[col], col_name, row["Length"])
+            indices, _ = process_interaction_feature(row[col], col_name, row["Length"])
             new_columns[f"{col}_binary"].append(indices)
 
     logger.info("Combining expanded features...")
     return pd.concat([df, pd.DataFrame(new_columns)], axis=1), list(new_columns.keys())
 
 
-def one_hot_encode(df: pd.DataFrame,
-                   column: str,
-                   mapping: Dict[str, str],
-                   include_other: bool = True) -> pd.DataFrame:
+def one_hot_encode(
+    df: pd.DataFrame, column: str, mapping: Dict[str, str], include_other: bool = True
+) -> pd.DataFrame:
     """
     Efficiently one-hot encode a column with an optional 'Other' category.
     """
@@ -175,12 +186,13 @@ def one_hot_encode(df: pd.DataFrame,
     return pd.concat([df, pd.get_dummies(encoding_series, prefix=column)], axis=1)
 
 
-def filter_and_shard(input_path: Path,
-                     output_dir: Path,
-                     n_shards: int,
-                     min_required_instances: int = 100,
-                     min_protein_length: int = 1022,
-                     ) -> Dict[str, List[str]]:
+def filter_and_shard(
+    input_path: Path,
+    output_dir: Path,
+    n_shards: int,
+    min_required_instances: int = 100,
+    min_protein_length: int = 1022,
+) -> Dict[str, List[str]]:
     """
     Clean UniProt data and split into shards.
     First filters out proteins without structural annotations and those that are too long.
@@ -201,7 +213,9 @@ def filter_and_shard(input_path: Path,
     categorical_options = {}
     for col_name, col_shortname, col_separator in categorical_concepts:
         # For each categorical feature, count the number of instances of each sub-category
-        _, _, _, notes = analyze_categorical_features(df, col_name, col_shortname, col_separator)
+        _, _, _, notes = analyze_categorical_features(
+            df, col_name, col_shortname, col_separator
+        )
         notes = notes[notes >= min_required_instances]
 
         # Create a list of most common sub-categories to keep (and a catch-all for the rest)
@@ -212,7 +226,7 @@ def filter_and_shard(input_path: Path,
     shard_size = len(df) // n_shards
     for i in range(0, len(df), shard_size):
         shard_id = i // shard_size
-        df_shard = df.iloc[i:min(i + shard_size, len(df))].reset_index(drop=True)
+        df_shard = df.iloc[i : min(i + shard_size, len(df))].reset_index(drop=True)
 
         shard_dir = output_dir / f"shard_{shard_id}"
         shard_dir.mkdir(parents=True, exist_ok=True)
@@ -222,12 +236,14 @@ def filter_and_shard(input_path: Path,
     return categorical_options
 
 
-def process_shard(shard_id: int,
-                  input_path: Path,
-                  output_dir: Path,
-                  categorical_options: Dict[str, List[str]],
-                  binary_cols: List[str],
-                  interaction_cols: List[str]):
+def process_shard(
+    shard_id: int,
+    input_path: Path,
+    output_dir: Path,
+    categorical_options: Dict[str, List[str]],
+    binary_cols: List[str],
+    interaction_cols: List[str],
+):
     """
     Process a single shard of UniProt data and converts a protein-level tsv into
     an amino acid-level sparse matrix with labels for each concept type.
@@ -250,7 +266,7 @@ def process_shard(shard_id: int,
         df=df,
         categorical_column_options=categorical_options,
         binary_cols=binary_cols,
-        interaction_cols=interaction_cols
+        interaction_cols=interaction_cols,
     )
 
     # Explode to amino acid level
@@ -260,7 +276,7 @@ def process_shard(shard_id: int,
     # Clean up some of the concept names to make them more readable
     df.columns = [re.sub(r"_binary", "", col) for col in df.columns]
     df.columns = [re.sub(r" \[FT\]", "", col) for col in df.columns]
-    
+
     # One-hot encode amino acids
     df = one_hot_encode(df, "amino_acid", aa_map, include_other=True)
 
@@ -281,10 +297,12 @@ def process_shard(shard_id: int,
     logger.info(f"Processed shard {shard_id}: {len(df):,} amino acids")
 
 
-def main(input_uniprot_path: Path,
-         output_dir: Path = Path("../../data/processed/"),
-         n_shards: int = 5,
-         min_required_instances: int = 100):
+def main(
+    input_uniprot_path: Path,
+    output_dir: Path = Path("../../data/processed/"),
+    n_shards: int = 5,
+    min_required_instances: int = 100,
+):
     """
     Process UniProt protein data into a machine learning-ready format.
 
@@ -305,7 +323,7 @@ def main(input_uniprot_path: Path,
         input_path=input_uniprot_path,
         output_dir=output_dir,
         n_shards=n_shards,
-        min_required_instances=min_required_instances
+        min_required_instances=min_required_instances,
     )
 
     # Process each shard
@@ -316,7 +334,7 @@ def main(input_uniprot_path: Path,
             output_dir=output_dir,
             categorical_options=categorical_options,
             binary_cols=binary_meta_cols,
-            interaction_cols=paired_binary_cols
+            interaction_cols=paired_binary_cols,
         )
 
     logger.info("UniProt data processing complete!")

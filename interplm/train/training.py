@@ -17,16 +17,15 @@ from interplm.train.trainer import SAETrainer
 def train_run(
     data,
     trainer: SAETrainer,
+    fidelity_fn=None,  # This has to be defined in the script that calls this
+    eval_steps=None,
+    save_dir=None,
+    log_steps=None,
+    save_steps=None,
+    max_ckpts_to_keep=3,
     use_wandb=False,
     wandb_entity="",
     wandb_project="",
-    steps=None,
-    save_steps=None,
-    max_ckpts_to_keep=3,
-    save_dir=None,
-    log_steps=None,
-    fidelity_fn=None,  # This has to be defined in the script that calls this
-    eval_steps=None,
     additional_wandb_args={},
 ):
     """
@@ -38,7 +37,6 @@ def train_run(
         use_wandb: Enable Weights & Biases logging
         wandb_entity: W&B team/entity name
         wandb_project: W&B project name
-        steps: Maximum training steps
         save_steps: Checkpoint saving frequency
         max_ckpts_to_keep: Maximum saved checkpoints to retain
         save_dir: Directory for saving checkpoints and configs
@@ -59,10 +57,11 @@ def train_run(
 
     # Setup logging
     trainer_config = trainer.config
+    steps = trainer.config["steps"]
+
     if log_steps is not None:
         if use_wandb:
-            check_for_necessary_wandb_args(
-                wandb_entity, wandb_project, log_steps)
+            check_for_necessary_wandb_args(wandb_entity, wandb_project, log_steps)
 
             wandb.init(
                 entity=wandb_entity,
@@ -100,9 +99,7 @@ def train_run(
         if log_steps is not None and step % log_steps == 0:
             log = {}
             with t.no_grad():
-                act, act_hat, f, losslog = trainer.loss(
-                    act, step=step, logging=True
-                )
+                act, act_hat, f, losslog = trainer.loss(act, step=step, logging=True)
 
                 # Calculate sparsity metrics
                 n_nonzero_per_example = (f != 0).float().sum(dim=-1)
@@ -159,8 +156,7 @@ def train_run(
             if len(saved_steps) > max_ckpts_to_keep:
                 min_step = min(saved_steps)
                 saved_steps.remove(min_step)
-                os.remove(os.path.join(
-                    save_dir, "checkpoints", f"ae_{min_step}.pt"))
+                os.remove(os.path.join(save_dir, "checkpoints", f"ae_{min_step}.pt"))
 
         # Update model
         trainer.update(step, act)

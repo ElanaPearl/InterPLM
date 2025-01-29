@@ -25,10 +25,11 @@ class SAETrainer:
         self.seed = seed
         self.logging_parameters = []
 
-    def update(self,
-               step: int,  # index of step in training
-               activations: t.Tensor,  # shape [batch_size, d_submodule]
-               ):
+    def update(
+        self,
+        step: int,  # index of step in training
+        activations: t.Tensor,  # shape [batch_size, d_submodule]
+    ):
         """
         Update the model based on current step and activations.
 
@@ -57,7 +58,7 @@ class SAETrainer:
     def config(self):
         """Basic configuration dictionary for the trainer."""
         return {
-            'wandb_name': 'trainer',
+            "wandb_name": "trainer",
         }
 
 
@@ -90,8 +91,7 @@ class ConstrainedAdam(t.optim.Adam):
             for p in self.constrained_params:
                 normed_p = p / p.norm(dim=0, keepdim=True)
                 # project away the parallel component of the gradient
-                p.grad -= (p.grad * normed_p).sum(dim=0,
-                                                  keepdim=True) * normed_p
+                p.grad -= (p.grad * normed_p).sum(dim=0, keepdim=True) * normed_p
         super().step(closure=closure)
         with t.no_grad():
             for p in self.constrained_params:
@@ -161,6 +161,7 @@ class StandardTrainer(SAETrainer):
 
         # Training parameters
         self.lr = lr
+        self.steps = steps
         self.warmup_steps = warmup_steps
         self.wandb_name = wandb_name
 
@@ -185,14 +186,17 @@ class StandardTrainer(SAETrainer):
         self.optimizer = ConstrainedAdam(
             params=self.ae.parameters(),
             constrained_params=self.ae.decoder.parameters(),
-            lr=lr
+            lr=lr,
         )
 
         # Setup learning rate warmup
         if resample_steps is None:
+
             def warmup_fn(step):
                 return min(step / warmup_steps, 1.0)
+
         else:
+
             def warmup_fn(step):
                 return min((step % resample_steps) / warmup_steps, 1.0)
 
@@ -202,15 +206,17 @@ class StandardTrainer(SAETrainer):
 
         # L1 penalty annealing setup
         self.final_l1_penalty = l1_penalty
-        self.l1_annealing_steps = int(
-            l1_annealing_pct * steps) if l1_annealing_pct > 0 else 0
+        self.l1_annealing_steps = (
+            int(l1_annealing_pct * steps) if l1_annealing_pct > 0 else 0
+        )
         self.current_l1_penalty = 0 if self.l1_annealing_steps > 0 else l1_penalty
 
     def update_l1_penalty(self, step):
         """Update L1 penalty according to annealing schedule."""
         if step < self.l1_annealing_steps:
-            self.current_l1_penalty = self.final_l1_penalty * \
-                (step / self.l1_annealing_steps)
+            self.current_l1_penalty = self.final_l1_penalty * (
+                step / self.l1_annealing_steps
+            )
         else:
             self.current_l1_penalty = self.final_l1_penalty
 
@@ -232,8 +238,7 @@ class StandardTrainer(SAETrainer):
 
             # Sample input vectors based on loss
             n_resample = min([deads.sum(), losses.shape[0]])
-            indices = t.multinomial(
-                losses, num_samples=n_resample, replacement=False)
+            indices = t.multinomial(losses, num_samples=n_resample, replacement=False)
             sampled_vecs = activations[indices]
 
             # Get average norm of active neurons
@@ -341,6 +346,7 @@ class StandardTrainer(SAETrainer):
             "lr": self.lr,
             "l1_penalty": self.final_l1_penalty,
             "l1_annealing_steps": self.l1_annealing_steps,
+            "steps": self.steps,
             "warmup_steps": self.warmup_steps,
             "resample_steps": self.resample_steps,
             "device": self.device,
