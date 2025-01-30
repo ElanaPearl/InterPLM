@@ -451,5 +451,8 @@ def load_concept_names(concept_name_path: Path) -> List[str]:
 if __name__ == "__main__":
     from tap import tapify
 
-    # tapify(analyze_concepts)
     tapify(analyze_all_shards_in_set)
+
+    # Note: If you want to split this up and run each shard individually,
+    # you can do so by instead calling:
+    # tapify(analyze_concepts)
