@@ -48,6 +48,11 @@ def identify_all_top_pairings(
             "|".join(concept_types_to_ignore), case=False, na=False
         )
     ]
+
+    print(
+        f"Compared {df['feature'].nunique():,} features (with 1+ true positive) to {df['concept'].nunique():,} concepts (that are not amino acids)"
+    )
+
     top_feat_concept_pairs = (
         df[df["f1_per_domain"] > top_threshold]
         .sort_values(["f1_per_domain", "f1"], ascending=False)
@@ -136,15 +141,16 @@ def report_metrics(
     all_top_feats.to_csv(all_top_feats_path, index=False, header=True)
 
     print(
-        f"Compared {df_valid['feature'].nunique():,} features to {len(top_feat_per_concept):,} concepts"
-    )
-    print(
         f"Saved best pairings per concept to {top_feat_per_concept_path} and all top pairings to {all_top_feats_path}"
     )
+    print("-" * 50)
     print(
         f"Average best F1 per concept in test set: {top_feat_per_concept['f1_per_domain'].mean():.3f}"
     )
-    print(f"Number of top pairings in test set: {len(all_top_feats)}")
+    print(f"Number of concepts identified: {all_top_feats['concept'].nunique()}")
+    print(
+        f"Number of features associated with a concept: {all_top_feats['feature'].nunique()}"
+    )
 
 
 if __name__ == "__main__":

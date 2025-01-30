@@ -14,7 +14,9 @@ from tap import tapify
 from tqdm import tqdm
 
 from interplm.concept.compare_activations_to_concepts import (
-    is_aa_level_concept, load_concept_names)
+    is_aa_level_concept,
+    load_concept_names,
+)
 
 
 def load_metadata(eval_set_dir: Path) -> Dict[str, Any]:
@@ -31,7 +33,7 @@ def calculate_metrics(
     positive_labels_per_domain: np.ndarray,
     concept_names: List[str],
     threshold_percents: List[float],
-    is_aa_concept_list: List[bool]
+    is_aa_concept_list: List[bool],
 ) -> pd.DataFrame:
     """
     Calculate precision, recall, and F1 scores for each concept-feature-threshold combination.
@@ -58,50 +60,59 @@ def calculate_metrics(
                 if tp[concept_idx, feature, threshold_idx] == 0:
                     continue
 
-                # Calculate base metrics
+                # Calculate tp, fp, precision and recall
                 curr_tp = tp[concept_idx, feature, threshold_idx]
                 curr_fp = fp[concept_idx, feature, threshold_idx]
                 precision = curr_tp / (curr_tp + curr_fp)
+                recall = (
+                    curr_tp / positive_labels[concept_idx]
+                    if positive_labels[concept_idx] > 0
+                    else 0
+                )
 
-                # Calculate recall variants
-                recall = (curr_tp / positive_labels[concept_idx]
-                          if positive_labels[concept_idx] > 0 else 0)
-
+                # Calculate recall per domain for domain-level concepts or just
+                # use recall if AA-level concept
                 if is_aa_concept_list[concept_idx]:
                     recall_per_domain = recall
                 else:
                     recall_per_domain = (
-                        tp_per_domain[concept_idx, feature, threshold_idx] /
-                        positive_labels_per_domain[concept_idx]
-                        if positive_labels_per_domain[concept_idx] > 0 else 0
+                        tp_per_domain[concept_idx, feature, threshold_idx]
+                        / positive_labels_per_domain[concept_idx]
+                        if positive_labels_per_domain[concept_idx] > 0
+                        else 0
                     )
 
                 # Calculate F1 scores
                 f1 = calculate_f1(precision, recall)
                 f1_per_domain = calculate_f1(precision, recall_per_domain)
 
-                results.append({
-                    "concept": concept,
-                    "feature": feature,
-                    "threshold_pct": threshold_pct,
-                    "precision": precision,
-                    "recall": recall,
-                    "recall_per_domain": recall_per_domain,
-                    "f1": f1,
-                    "f1_per_domain": f1_per_domain,
-                    "tp": curr_tp,
-                    "fp": curr_fp,
-                    "tp_per_domain": tp_per_domain[concept_idx, feature, threshold_idx],
-                    "is_aa_level_concept": is_aa_concept_list[concept_idx]
-                })
+                results.append(
+                    {
+                        "concept": concept,
+                        "feature": feature,
+                        "threshold_pct": threshold_pct,
+                        "precision": precision,
+                        "recall": recall,
+                        "recall_per_domain": recall_per_domain,
+                        "f1": f1,
+                        "f1_per_domain": f1_per_domain,
+                        "tp": curr_tp,
+                        "fp": curr_fp,
+                        "tp_per_domain": tp_per_domain[
+                            concept_idx, feature, threshold_idx
+                        ],
+                        "is_aa_level_concept": is_aa_concept_list[concept_idx],
+                    }
+                )
 
     return pd.DataFrame(results)
 
 
 def calculate_f1(precision: float, recall: float) -> float:
     """Calculate F1 score from precision and recall."""
-    return (2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0 else 0)
+    return (
+        2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    )
 
 
 def combine_metrics_across_shards(
@@ -119,15 +130,13 @@ def combine_metrics_across_shards(
         shards_to_eval: Optional list of specific shards to evaluate
     """
     # Load concept information
-    concept_names = load_concept_names(
-        eval_set_dir / "aa_concepts_columns.txt")
+    concept_names = load_concept_names(eval_set_dir / "aa_concepts_columns.txt")
     is_aa_concept_list = [is_aa_level_concept(name) for name in concept_names]
 
     # Load metadata and get positive label counts
     metadata = load_metadata(eval_set_dir)
     positive_labels = np.array(metadata["n_positive_aa_per_concept"])
-    positive_labels_per_domain = np.array(
-        metadata["n_positive_domains_per_concept"])
+    positive_labels_per_domain = np.array(metadata["n_positive_domains_per_concept"])
 
     # Use all shards if none specified
     shards_to_eval = metadata["shard_source"]
@@ -154,10 +163,14 @@ def combine_metrics_across_shards(
     # Calculate and save metrics
     print("Calculating F1 scores...")
     metrics_df = calculate_metrics(
-        tp_total, fp_total, tp_per_domain_total,
+        tp_total,
+        fp_total,
+        tp_per_domain_total,
         np.array(positive_labels).sum(axis=0),
         np.array(positive_labels_per_domain).sum(axis=0),
-        concept_names, threshold_percents, is_aa_concept_list
+        concept_names,
+        threshold_percents,
+        is_aa_concept_list,
     )
 
     output_path = eval_res_dir / "concept_f1_scores.csv"

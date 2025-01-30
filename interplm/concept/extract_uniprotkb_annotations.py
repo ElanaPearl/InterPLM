@@ -6,16 +6,17 @@ This script:
 3. Converts data into sparse matrix format for efficient storage
 
 Usage:
-    python extract_uniprotkb_annotations.py --input_uniprot_path ../../data/uniprotkb.tsv.gz
-                             --output_dir ../../data/processed/
-                             --n_shards 5
+    python extract_uniprotkb_annotations.py \
+        --input_uniprot_path ../../data/uniprotkb.tsv.gz \
+        --output_dir ../../data/processed/ \
+        --n_shards 5
 """
 
 import logging
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,7 @@ from interplm.concept.uniprotkb_concept_constants import (
     paired_binary_cols,
 )
 from interplm.concept.uniprotkb_parsing_utils import (
+    analyze_categorical_features,
     process_binary_feature,
     process_categorical_feature,
     process_interaction_feature,
@@ -47,61 +49,6 @@ def add_sequence_features(row: pd.Series) -> pd.Series:
     row["amino_acid"] = split_sequence
     row["local_index"] = list(range(len(split_sequence)))
     return row
-
-
-def analyze_categorical_features(
-    df: pd.DataFrame, category: str, category_name: str, separator_name: str = "note"
-) -> Tuple[int, pd.Series, List[int], pd.Series]:
-    """
-    Analyze categorical features to find common categories and their statistics.
-
-    Returns:
-        Tuple of (number of proteins, occurrences per protein, lengths, note counts)
-    """
-    non_na = df[category].dropna()
-    n_per_prot = non_na.apply(lambda x: x.count(category_name)).value_counts()
-
-    all_notes = []
-    all_lengths = []
-
-    for row in non_na:
-        entries = row.split(category_name)[1:]
-        for entry in entries:
-            # Extract note
-            note_start = entry.find(separator_name)
-            note = entry[note_start + len(separator_name) + 1 :]
-            note_end = note.find(";")
-            note = note[:note_end].strip('"')
-
-            if "/evidence" not in note:
-                all_notes.append(note)
-
-            try:
-                # Extract length
-                location = entry[1:]
-                end_of_loc = location.find(";")
-                location = location[:end_of_loc] if end_of_loc != -1 else location
-
-                if ":" in location or "?" in location:
-                    continue
-
-                if ".." in location:
-                    start, end = location.split("..")
-                    start = int(start.strip("<"))
-                    end = int(end.strip(">"))
-                    all_lengths.append(end - start)
-                else:
-                    all_lengths.append(1)
-
-            except Exception as e:
-                logger.warning(f"Error analyzing feature length: {e}")
-
-    return (
-        len(non_na),
-        n_per_prot.sort_values(ascending=False),
-        all_lengths,
-        pd.Series(all_notes).value_counts(),
-    )
 
 
 def expand_features(
@@ -186,43 +133,45 @@ def one_hot_encode(
     return pd.concat([df, pd.get_dummies(encoding_series, prefix=column)], axis=1)
 
 
-def filter_and_shard(
-    input_path: Path,
-    output_dir: Path,
-    n_shards: int,
-    min_required_instances: int = 100,
-    min_protein_length: int = 1022,
-) -> Dict[str, List[str]]:
-    """
-    Clean UniProt data and split into shards.
-    First filters out proteins without structural annotations and those that are too long.
-    Then for each categorical concept type, counts the number of occurances on each sub-category
-    and filters out those with less than min_required_instances. Finally splits the data into
-    n_shards and saves each shard to disk.
-    """
-    logger.info("Loading and cleaning UniProt data...")
-    df = pd.read_csv(input_path, sep="\t")
+def preprocess_proteins(
+    df: pd.DataFrame,
+    min_protein_length: int,
+) -> pd.DataFrame:
+    """Clean and filter protein dataset.
 
-    # Clean and shuffle
+    - Shuffles data
+    - Removes proteins without AlphaFoldDB structures
+    - Removes proteins longer than min_protein_length
+    - Removes duplicate sequences
+    """
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
     df = df[df["Length"] <= min_protein_length]
     df = df[df["AlphaFoldDB"].notnull()]
     df = df.drop_duplicates(subset=["Sequence"], keep="first")
+    return df
 
-    # Count occurances of categorical features and filter
+
+def enumerate_protein_subcategories(
+    df: pd.DataFrame,
+    min_required_instances: int = 100,
+) -> Dict[str, List[str]]:
+    """Analyze which subcategories appear enough times to be useful for ML."""
     categorical_options = {}
     for col_name, col_shortname, col_separator in categorical_concepts:
-        # For each categorical feature, count the number of instances of each sub-category
         _, _, _, notes = analyze_categorical_features(
             df, col_name, col_shortname, col_separator
         )
         notes = notes[notes >= min_required_instances]
-
-        # Create a list of most common sub-categories to keep (and a catch-all for the rest)
         categorical_options[col_name] = [c for c in notes.keys() if c != ""] + ["any"]
+    return categorical_options
 
-    # Split into shards
-    logger.info(f"Splitting data into {n_shards} shards...")
+
+def shard_protein_data(
+    df: pd.DataFrame,
+    output_dir: Path,
+    n_shards: int,
+) -> None:
+    """Split preprocessed data into shards for parallel processing."""
     shard_size = len(df) // n_shards
     for i in range(0, len(df), shard_size):
         shard_id = i // shard_size
@@ -230,19 +179,17 @@ def filter_and_shard(
 
         shard_dir = output_dir / f"shard_{shard_id}"
         shard_dir.mkdir(parents=True, exist_ok=True)
-
         df_shard.to_csv(shard_dir / "protein_data.tsv", sep="\t", index=False)
 
-    return categorical_options
 
-
-def process_shard(
+def convert_shard_to_amino_acid_features(
     shard_id: int,
     input_path: Path,
     output_dir: Path,
     categorical_options: Dict[str, List[str]],
     binary_cols: List[str],
     interaction_cols: List[str],
+    overwrite: bool = False,
 ):
     """
     Process a single shard of UniProt data and converts a protein-level tsv into
@@ -251,7 +198,7 @@ def process_shard(
     output_metadata = output_dir / f"shard_{shard_id}" / "aa_metadata.csv"
     output_sparse = output_dir / f"shard_{shard_id}" / "aa_concepts.npz"
 
-    if output_sparse.exists():
+    if output_sparse.exists() and not overwrite:
         logger.info(f"Shard {shard_id} already processed, skipping...")
         return
 
@@ -302,6 +249,8 @@ def main(
     output_dir: Path = Path("../../data/processed/"),
     n_shards: int = 5,
     min_required_instances: int = 100,
+    min_protein_length: int = 1022,
+    overwrite: bool = False,
 ):
     """
     Process UniProt protein data into a machine learning-ready format.
@@ -318,23 +267,24 @@ def main(
     # Create output directory
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clean data and split into shards
-    categorical_options = filter_and_shard(
-        input_path=input_uniprot_path,
-        output_dir=output_dir,
-        n_shards=n_shards,
-        min_required_instances=min_required_instances,
-    )
+    # Preprocess data
+    df = pd.read_csv(input_uniprot_path, sep="\t")
+    df = preprocess_proteins(df, min_protein_length)
+    shard_protein_data(df, output_dir, n_shards)
+
+    # Dynamically determine which sub-categories are abundant enough to include
+    categorical_options = enumerate_protein_subcategories(df, min_required_instances)
 
     # Process each shard
     for shard in range(n_shards):
-        process_shard(
+        convert_shard_to_amino_acid_features(
             shard_id=shard,
             input_path=output_dir / f"shard_{shard}" / "protein_data.tsv",
             output_dir=output_dir,
             categorical_options=categorical_options,
             binary_cols=binary_meta_cols,
             interaction_cols=paired_binary_cols,
+            overwrite=overwrite,
         )
 
     logger.info("UniProt data processing complete!")

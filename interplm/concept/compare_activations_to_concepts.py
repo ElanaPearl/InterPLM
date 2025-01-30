@@ -11,13 +11,12 @@ However, the neuron activations are actually quite dense so running the sparse c
 on neurons disguising as SAE features via identity SAEs is quite slow. To address that, we
 use a dense implementation for the neuron activations that can be set via the is_sparse flag.
 """
+
 import json
-import time
 from pathlib import Path
 from typing import List, Tuple, Union
 
 import numpy as np
-import pandas as pd
 import torch
 from scipy import sparse
 from tqdm import tqdm
@@ -27,7 +26,9 @@ from interplm.sae.dictionary import AutoEncoder
 from interplm.sae.inference import get_sae_feats_in_batches, load_model
 
 
-def count_unique_nonzero_sparse(matrix: Union[np.ndarray, sparse.spmatrix]) -> List[int]:
+def count_unique_nonzero_sparse(
+    matrix: Union[np.ndarray, sparse.spmatrix]
+) -> List[int]:
     """
     Count unique non-zero values in each column of a sparse matrix.
 
@@ -65,7 +66,7 @@ def calc_metrics_sparse(
     sae_feats_sparse: sparse.spmatrix,
     per_token_labels_sparse: sparse.spmatrix,
     threshold_percents: List[float],
-    is_aa_level_concept_list: List[bool]
+    is_aa_level_concept_list: List[bool],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate various metrics for sparse feature matrices across different thresholds.
@@ -112,22 +113,31 @@ def calc_metrics_sparse(
 
             # Calculate true positives
             tp_sparse = sae_feats_binarized.multiply(concept_labels > 0)
-            tp[concept_idx, :, threshold_idx] = np.asarray(tp_sparse.sum(axis=0)).ravel()
+            tp[concept_idx, :, threshold_idx] = np.asarray(
+                tp_sparse.sum(axis=0)
+            ).ravel()
 
             # Calculate false positives
-            fp_sparse = sae_feats_binarized.multiply(concept_labels != 0).multiply(-1) + sae_feats_binarized
-            fp[concept_idx, :, threshold_idx] = np.asarray(fp_sparse.sum(axis=0)).ravel()
+            fp_sparse = (
+                sae_feats_binarized.multiply(concept_labels != 0).multiply(-1)
+                + sae_feats_binarized
+            )
+            fp[concept_idx, :, threshold_idx] = np.asarray(
+                fp_sparse.sum(axis=0)
+            ).ravel()
 
             # Calculate domain-specific metrics for non-AA-level concepts
             if not is_aa_level_concept_list[concept_idx]:
-                tp_per_domain[concept_idx, :, threshold_idx] = count_unique_nonzero_sparse(
-                    sae_feats_binarized.multiply(concept_labels)
+                tp_per_domain[concept_idx, :, threshold_idx] = (
+                    count_unique_nonzero_sparse(
+                        sae_feats_binarized.multiply(concept_labels)
+                    )
                 )
 
     return tp, fp, tp_per_domain
 
 
-def count_unique_nonzero_dense_fixed(matrix: torch.Tensor) -> List[int]:
+def count_unique_nonzero_dense(matrix: torch.Tensor) -> List[int]:
     """
     Count unique non-zero values in each column of a dense matrix.
 
@@ -155,7 +165,7 @@ def calc_metrics_dense(
     sae_feats: torch.Tensor,
     per_token_labels_sparse: Union[np.ndarray, sparse.spmatrix],
     threshold_percents: List[float],
-    is_aa_level_concept: List[bool]
+    is_aa_level_concept: List[bool],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate metrics for dense feature matrices
@@ -172,7 +182,9 @@ def calc_metrics_dense(
     # Set up GPU if available, otherwise use CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # Convert labels to dense tensor and move to appropriate device
-    per_token_labels = torch.tensor(per_token_labels_sparse.astype(np.float32), device=device)
+    per_token_labels = torch.tensor(
+        per_token_labels_sparse.astype(np.float32), device=device
+    )
 
     # Get dimensions from input tensors
     _, n_features = sae_feats.shape
@@ -181,7 +193,8 @@ def calc_metrics_dense(
 
     # Convert thresholds to tensor and move to device
     per_feat_adjusted_thresholds = torch.tensor(
-        threshold_percents, dtype=torch.float32, device=device)
+        threshold_percents, dtype=torch.float32, device=device
+    )
 
     # Initialize result tensors on device
     tp = torch.zeros((n_concepts, n_features, n_thresholds), device=device)
@@ -201,16 +214,17 @@ def calc_metrics_dense(
 
             # Calculate true positives and false positives
             tp[concept_idx, :, threshold_idx] = (
-                sae_feats_binarized * (concept_labels > 0)).sum(dim=0)
+                sae_feats_binarized * (concept_labels > 0)
+            ).sum(dim=0)
             fp[concept_idx, :, threshold_idx] = (
-                sae_feats_binarized * (concept_labels != 0) * (-1) + sae_feats_binarized).sum(dim=0)
+                sae_feats_binarized * (concept_labels != 0) * (-1) + sae_feats_binarized
+            ).sum(dim=0)
 
             # Calculate domain-specific metrics for non-AA-level concepts
             if not is_aa_level_concept[concept_idx]:
                 tp_per_domain[concept_idx, :, threshold_idx] = torch.tensor(
-                    count_unique_nonzero_dense_fixed(
-                        sae_feats_binarized * concept_labels),
-                    device=device
+                    count_unique_nonzero_dense(sae_feats_binarized * concept_labels),
+                    device=device,
                 )
 
     # Convert results back to numpy arrays on CPU
@@ -225,7 +239,7 @@ def process_shard(
     threshold_percents: List[float],
     is_aa_concept_list: List[bool],
     feat_chunk_max: int = 512,
-    is_sparse: bool = True
+    is_sparse: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Process a shard of data by splitting it into manageable chunks for feature calculation.
@@ -244,7 +258,9 @@ def process_shard(
         Tuple of arrays (tp, fp, tp_per_domain) containing calculated metrics
     """
     # Load embeddings to specified device
-    esm_acts = torch.load(esm_embeddings_pt_path, map_location=device, weights_only=True)
+    esm_acts = torch.load(
+        esm_embeddings_pt_path, map_location=device, weights_only=True
+    )
 
     # Calculate chunking parameters
     feature_chunk_size = min(feat_chunk_max, sae.dict_size)
@@ -261,8 +277,9 @@ def process_shard(
     tp_per_domain = np.zeros((n_concepts, n_features, n_thresholds))
 
     # Convert labels to appropriate format
-    per_token_labels = sparse.csr_matrix(
-        per_token_labels) if is_sparse else per_token_labels.toarray()
+    per_token_labels = (
+        sparse.csr_matrix(per_token_labels) if is_sparse else per_token_labels.toarray()
+    )
 
     # Process each chunk of features
     for feature_list in tqdm(np.array_split(range(total_features), num_chunks)):
@@ -272,17 +289,22 @@ def process_shard(
             device=device,
             esm_embds=esm_acts,
             chunk_size=1024,
-            feat_list=feature_list
+            feat_list=feature_list,
         )
 
         # Calculate metrics using either sparse or dense implementation
         if is_sparse:
             sae_feats_sparse = sparse.csr_matrix(sae_feats.cpu().numpy())
             metrics = calc_metrics_sparse(
-                sae_feats_sparse, per_token_labels, threshold_percents, is_aa_concept_list)
+                sae_feats_sparse,
+                per_token_labels,
+                threshold_percents,
+                is_aa_concept_list,
+            )
         else:
             metrics = calc_metrics_dense(
-                sae_feats, per_token_labels, threshold_percents, is_aa_concept_list)
+                sae_feats, per_token_labels, threshold_percents, is_aa_concept_list
+            )
 
         # Update results arrays with computed metrics
         tp_subset, fp_subset, tp_per_domain_subset = metrics
@@ -293,15 +315,15 @@ def process_shard(
     return (tp, fp, tp_per_domain)
 
 
-def analyze_concepts(sae_dir: Path,
-                     esm_embds_dir: Path = Path(
-                         "../../data/processed/embeddings"),
-                     eval_set_dir: Path = Path("../../data/processed/valid"),
-                     output_dir: Path = "concept_results",
-                     threshold_percents: List[float] = [
-                         0, 0.15, 0.5, 0.6, 0.8],
-                     shard: int | None = None,
-                     is_sparse: bool = True):
+def analyze_concepts(
+    sae_dir: Path,
+    esm_embds_dir: Path = Path("../../data/processed/embeddings"),
+    eval_set_dir: Path = Path("../../data/processed/valid"),
+    output_dir: Path = "concept_results",
+    threshold_percents: List[float] = [0, 0.15, 0.5, 0.6, 0.8],
+    shard: int | None = None,
+    is_sparse: bool = True,
+):
     """
     Analyzes concepts in protein sequences using a Sparse Autoencoder (SAE) model.
 
@@ -339,13 +361,15 @@ def analyze_concepts(sae_dir: Path,
 
     # Load concept names and identify amino acid level concepts
     concept_names = load_concept_names(eval_set_dir / "aa_concepts_columns.txt")
-    is_aa_concept_list = [is_aa_level_concept(concept_name) for concept_name in concept_names]
+    is_aa_concept_list = [
+        is_aa_level_concept(concept_name) for concept_name in concept_names
+    ]
 
     # Load and process labels for the specified shard
-    per_token_labels = sparse.load_npz(
-        eval_set_metadata["path_to_shards"][str(shard)])
-    per_token_labels = per_token_labels[:,
-                                        eval_set_metadata["indices_of_concepts_to_keep"]]
+    per_token_labels = sparse.load_npz(eval_set_metadata["path_to_shards"][str(shard)])
+    per_token_labels = per_token_labels[
+        :, eval_set_metadata["indices_of_concepts_to_keep"]
+    ]
 
     # Set up device (GPU if available, otherwise CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -354,31 +378,35 @@ def analyze_concepts(sae_dir: Path,
     sae = load_model(model_path=sae_dir / "ae_normalized.pt", device=device)
 
     # Process the shard and get results (true positives, false positives, and true positives per domain)
-    (tp, fp, tp_per_domain) = process_shard(sae,
-                                            device,
-                                            esm_embds_dir /
-                                            f"shard_{shard}.pt",
-                                            per_token_labels,
-                                            threshold_percents,
-                                            is_aa_concept_list,
-                                            feat_chunk_max=250,
-                                            is_sparse=is_sparse)
+    (tp, fp, tp_per_domain) = process_shard(
+        sae,
+        device,
+        esm_embds_dir / f"shard_{shard}.pt",
+        per_token_labels,
+        threshold_percents,
+        is_aa_concept_list,
+        feat_chunk_max=250,
+        is_sparse=is_sparse,
+    )
 
     # Create output directory if it doesn't exist and save results
     output_dir.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(output_dir / f"shard_{shard}_counts.npz",
-                        tp=tp,
-                        fp=fp,
-                        tp_per_domain=tp_per_domain)
+    np.savez_compressed(
+        output_dir / f"shard_{shard}_counts.npz",
+        tp=tp,
+        fp=fp,
+        tp_per_domain=tp_per_domain,
+    )
 
 
-def analyze_all_shards_in_set(sae_dir: Path,
-                              esm_embds_dir: Path,
-                              eval_set_dir: Path,
-                              output_dir: Path = "concept_results",
-                              threshold_percents: List[float] = [
-                                  0, 0.15, 0.5, 0.6, 0.8],
-                              is_sparse: bool = True):
+def analyze_all_shards_in_set(
+    sae_dir: Path,
+    esm_embds_dir: Path,
+    eval_set_dir: Path,
+    output_dir: Path = "concept_results",
+    threshold_percents: List[float] = [0, 0.15, 0.5, 0.6, 0.8],
+    is_sparse: bool = True,
+):
     """Wrapper to scan calculate metrics across all shards in an evaluation set.
 
     Args:
@@ -403,8 +431,15 @@ def analyze_all_shards_in_set(sae_dir: Path,
 
     # Process each shard sequentially
     for shard in shards_to_eval:
-        analyze_concepts(sae_dir, esm_embds_dir, eval_set_dir, output_dir,
-                         threshold_percents, shard, is_sparse)
+        analyze_concepts(
+            sae_dir,
+            esm_embds_dir,
+            eval_set_dir,
+            output_dir,
+            threshold_percents,
+            shard,
+            is_sparse,
+        )
 
 
 def load_concept_names(concept_name_path: Path) -> List[str]:
@@ -415,4 +450,6 @@ def load_concept_names(concept_name_path: Path) -> List[str]:
 
 if __name__ == "__main__":
     from tap import tapify
+
+    # tapify(analyze_concepts)
     tapify(analyze_all_shards_in_set)
