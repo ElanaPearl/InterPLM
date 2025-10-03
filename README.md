@@ -18,7 +18,7 @@ cd interPLM
 
 # Create and activate conda environment
 conda env create -f environment.yml
-conda activate interplm-public
+conda activate interplm
 
 # Install package
 pip install -e .
