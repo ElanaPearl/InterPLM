@@ -49,18 +49,27 @@ class ProteinFeatureVisualizer:
 
         # Initialize embedder for ESM models
         self.esm_embedder = None
-        if "ESM" in self.dashboard_data.model_type.upper():
-            # Use model_type which has the full HF model identifier (e.g. esm2_t6_8M_UR50D)
-            # model_name is just "esm" which isn't a valid HF identifier
-            # Get default device, but avoid MPS due to bugs that corrupt embeddings
-            embedder_device = get_device()
-            if embedder_device == "mps":
-                embedder_device = "cpu"
-            self.esm_embedder = get_embedder(
-                'esm',
-                model_name=f"facebook/{self.dashboard_data.model_type}",
-                device=embedder_device
-            )
+        # Initialize embedder if model_name and model_type are provided
+        if hasattr(self.dashboard_data, 'model_name') and hasattr(self.dashboard_data, 'model_type'):
+            if self.dashboard_data.model_name and self.dashboard_data.model_type:
+                # Get default device, but avoid MPS due to bugs that corrupt embeddings
+                embedder_device = get_device()
+                if embedder_device == "mps":
+                    embedder_device = "cpu"
+
+                # Use the model_name from dashboard metadata (e.g., 'esm', 'progen2')
+                embedder_type = self.dashboard_data.model_name
+                model_name = self.dashboard_data.model_type
+
+                # For ESM models, prepend 'facebook/' if not already present
+                if embedder_type == 'esm' and not model_name.startswith('facebook/'):
+                    model_name = f"facebook/{model_name}"
+
+                self.esm_embedder = get_embedder(
+                    embedder_type,
+                    model_name=model_name,
+                    device=embedder_device
+                )
 
 
     @property
@@ -319,8 +328,11 @@ class ProteinFeatureVisualizer:
         """Display feature-wide statistics section"""
         dash_data = self.dashboard_data.data[layer]
 
+        # Extract layer number from layer name (e.g., "layer_4" -> "4")
+        layer_num = layer.split('_')[1] if '_' in str(layer) else str(layer)
+
         st.header(
-            f"Metrics on all SAE features from {self.dashboard_data.model_type} layer {layer}",
+            f"Metrics on all SAE features from {self.dashboard_data.model_type} layer {layer_num}",
             help=help_notes["metrics"],
         )
         st.markdown(
@@ -403,7 +415,6 @@ class ProteinFeatureVisualizer:
                 st.plotly_chart(
                     plot_of_feat_acts,
                     use_container_width=True,
-                    config={"displayModeBar": False},
                 )
             else:
                 st.write("No activations found for this feature in random sample.")
@@ -425,7 +436,7 @@ class ProteinFeatureVisualizer:
 
                         # Format for display
                         display_df = concepts_for_feat[["concept", "f1_per_domain", "precision", "recall", "threshold_pct"]].copy()
-                        display_df.columns = ["Concept", "F1 (per domain)", "Precision", "Recall", "Threshold %"]
+                        display_df.columns = ["Concept", "F1", "Precision", "Recall", "Threshold %"]
                         display_df.set_index("Concept", inplace=True)
                         st.write(display_df)
 
@@ -659,7 +670,7 @@ class ProteinFeatureVisualizer:
         )
         st.subheader("**Structural vs Sequential**", help=struct_v_seq_help)
         st.plotly_chart(
-            plot, use_container_width=True, config={"displayModeBar": False}
+            plot, use_container_width=True
         )
 
     def _plot_activation_consistency(self, dash_data: Dict, feature_id: int):
@@ -680,7 +691,7 @@ class ProteinFeatureVisualizer:
             help="Shows the consistency of feature activation across and within proteins.",
         )
         st.plotly_chart(
-            plot, use_container_width=True, config={"displayModeBar": False}
+            plot, use_container_width=True
         )
 
     def _plot_umap(self, dash_data: Dict, feature_id: int):
@@ -702,8 +713,6 @@ class ProteinFeatureVisualizer:
         st.plotly_chart(
             plot,
             use_container_width=True,
-            help="UMAP visualization of feature values",
-            config={"displayModeBar": False},
         )
 
     def _display_swissprot_concepts(self, dash_data: Dict, feature_id: int, layer: int):
@@ -717,8 +726,11 @@ class ProteinFeatureVisualizer:
             .drop_duplicates(["concept"], keep="first")
         )
 
+        # Extract layer number from layer name (e.g., "layer_4" -> "4")
+        layer_num = layer.split('_')[1] if '_' in str(layer) else str(layer)
+
         st.subheader(
-            f"**Concepts Identified in Layer {layer}**",
+            f"**Concepts Identified in Layer {layer_num}**",
             help="Concepts are defined based on Swiss-Prot annotations. For each concept identified in the SAE features, we list one example feature that activates on this concept. Details on concept-feature pairing is described in the InterPLM paper.",
         )
         display_cols = {
@@ -806,8 +818,6 @@ class ProteinFeatureVisualizer:
                         st.plotly_chart(
                             palette_to_viz,
                             use_container_width=True,
-                            height=100,
-                            config={"displayModeBar": False},
                         )
                 else:
                     col1, col2 = st.columns([3, 5])
@@ -822,7 +832,6 @@ class ProteinFeatureVisualizer:
                             "Amino Acids",
                         ),
                         use_container_width=True,
-                        config={"displayModeBar": False},
                     )
 
                 with col2:
