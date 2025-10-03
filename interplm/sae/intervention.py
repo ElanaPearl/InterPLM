@@ -12,7 +12,14 @@ def get_esm_submodule_and_access_method(nnsight_model: NNsight, hidden_layer_idx
     instead we just adjust the .input attribute of the next layer (i+1) which is equivalent.
     """
 
-    n_layers = len(nnsight_model.esm.encoder.layer)
+    # In newer transformers (>=4.36), ESM models no longer have .esm prefix
+    # Try both paths for backward compatibility
+    try:
+        encoder = nnsight_model.esm.encoder
+    except AttributeError:
+        encoder = nnsight_model.encoder
+
+    n_layers = len(encoder.layer)
 
     # Confirm the hidden layer index is within bounds
     if hidden_layer_idx > n_layers:
@@ -20,12 +27,12 @@ def get_esm_submodule_and_access_method(nnsight_model: NNsight, hidden_layer_idx
 
     # The last hidden layer has an additional normalization step so we can access the output of that
     elif hidden_layer_idx == n_layers:
-        return nnsight_model.esm.encoder.emb_layer_norm_after, "output"
+        return encoder.emb_layer_norm_after, "output"
 
     # The layers are indexed 0-5 in the list and we refer to them 1-6 so we don't need to adjust the index
     # in order to access the input of the next layer
     else:
-        return nnsight_model.esm.encoder.layer[hidden_layer_idx], "input"
+        return encoder.layer[hidden_layer_idx], "input"
 
 
 def get_esm_output_with_intervention(
