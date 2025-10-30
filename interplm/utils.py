@@ -6,10 +6,19 @@ import torch
 
 
 def get_device() -> str:
+    """Get the best available device for PyTorch operations.
+
+    Note: MPS (Apple Silicon GPU) is intentionally disabled as it has been
+    found to be unreliable.
+
+    Returns:
+        "cuda" if NVIDIA GPU available, else "cpu"
+    """
     if torch.cuda.is_available():
         return "cuda"
-    elif torch.backends.mps.is_available():
-        return "mps"
+    # MPS disabled - unreliable
+    # elif torch.backends.mps.is_available():
+    #     return "mps"
     else:
         return "cpu"
 
