@@ -60,6 +60,7 @@ class ReLUTrainer(SAETrainer):
         self.steps = trainer_config.steps
         self.warmup_steps = trainer_config.warmup_steps
         self.decay_start = trainer_config.decay_start
+        self.grad_clip_norm = trainer_config.grad_clip_norm
 
         self.device = get_device()
         self.ae.to(self.device)
@@ -151,29 +152,33 @@ class ReLUTrainer(SAETrainer):
                 },
             )
 
-    def update(self, step, activations):
+    def update(self, step, x):
         """
         Perform single training step.
 
         Args:
             step: Current training step
-            activations: Batch of input activations
+            x: Batch of input activations
         """
-        activations = activations.to(self.device)
+        x = x.to(self.device)
 
         # Compute and apply gradients
         self.optimizer.zero_grad()
-        loss = self.loss(activations, step=step)
+        loss = self.loss(x, step=step)
         loss.backward()
+
+        if self.grad_clip_norm is not None:
+            t.nn.utils.clip_grad_norm_(self.ae.parameters(), self.grad_clip_norm)
+
         self.optimizer.step()
         self.scheduler.step()
 
         # Check for dead neurons
         if self.resample_steps is not None and step % self.resample_steps == 0:
             self.resample_neurons(
-                self.steps_since_active > self.resample_steps / 2, activations
+                self.steps_since_active > self.resample_steps / 2, x
             )
-            
+
         return loss.item()
     
     def resample_neurons(self, dead_neurons: t.Tensor, activations: t.Tensor):

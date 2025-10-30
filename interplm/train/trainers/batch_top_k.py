@@ -56,6 +56,7 @@ class BatchTopKTrainer(SAETrainer):
         self.steps = trainer_config.steps
         self.decay_start = trainer_config.decay_start
         self.warmup_steps = trainer_config.warmup_steps
+        self.grad_clip_norm = trainer_config.grad_clip_norm
 
         # Top-K parameters
         self.k = trainer_config.k
@@ -240,7 +241,8 @@ class BatchTopKTrainer(SAETrainer):
             self.ae.activation_dim,
             self.ae.dict_size,
         )
-        t.nn.utils.clip_grad_norm_(self.ae.parameters(), 1.0)
+        if self.grad_clip_norm is not None:
+            t.nn.utils.clip_grad_norm_(self.ae.parameters(), self.grad_clip_norm)
 
         self.optimizer.step()
         self.optimizer.zero_grad()

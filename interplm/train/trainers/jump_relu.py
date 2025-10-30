@@ -48,6 +48,7 @@ class JumpReLUTrainer(SAETrainer):
         self.steps = trainer_config.steps
         self.warmup_steps = trainer_config.warmup_steps
         self.decay_start = trainer_config.decay_start
+        self.grad_clip_norm = trainer_config.grad_clip_norm
 
         # JumpReLU parameters
         self.bandwidth = trainer_config.bandwidth
@@ -97,9 +98,9 @@ class JumpReLUTrainer(SAETrainer):
 
         # The SAE model handles normalization internally
         sparsity_scale = self.sparsity_warmup_fn(step)
-        x = x.to(self.ae.W_enc.dtype)
+        x = x.to(self.ae.encoder.weight.dtype)
 
-        pre_jump = x @ self.ae.W_enc + self.ae.b_enc
+        pre_jump = self.ae.encoder(x)
         f = JumpReLUFunction.apply(pre_jump, self.ae.threshold, self.bandwidth)
 
         active_indices = f.sum(0) > 0
@@ -141,23 +142,25 @@ class JumpReLUTrainer(SAETrainer):
         loss = self.loss(x, step=step)
         loss.backward()
 
-        # We must transpose because we are using nn.Parameter, not nn.Linear
-        self.ae.W_dec.grad = remove_gradient_parallel_to_decoder_directions(
-            self.ae.W_dec.T,
-            self.ae.W_dec.grad.T,
+        # Remove gradient parallel to decoder directions
+        # decoder.weight has shape (dict_size, activation_dim) for nn.Linear
+        self.ae.decoder.weight.grad = remove_gradient_parallel_to_decoder_directions(
+            self.ae.decoder.weight,
+            self.ae.decoder.weight.grad,
             self.ae.activation_dim,
             self.ae.dict_size,
-        ).T
-        torch.nn.utils.clip_grad_norm_(self.ae.parameters(), 1.0)
+        )
+        if self.grad_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(self.ae.parameters(), self.grad_clip_norm)
 
         self.optimizer.step()
         self.scheduler.step()
         self.optimizer.zero_grad()
 
-        # We must transpose because we are using nn.Parameter, not nn.Linear
-        self.ae.W_dec.data = set_decoder_norm_to_unit_norm(
-            self.ae.W_dec.T, self.ae.activation_dim, self.ae.dict_size
-        ).T
+        # Renormalize decoder weights to unit norm
+        self.ae.decoder.weight.data = set_decoder_norm_to_unit_norm(
+            self.ae.decoder.weight, self.ae.activation_dim, self.ae.dict_size
+        )
 
         return loss.item()
 

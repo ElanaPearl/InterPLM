@@ -18,6 +18,7 @@ class SAETrainerConfig(ABC):
     decay_start: int = None
     resample_steps: int | None = None
     normalize_to_sqrt_d: bool = False # previously apply_unit_normalization
+    grad_clip_norm: float | None = 1.0  # Gradient clipping norm (None = no clipping)
 
     def set_and_validate_activation_dim(self, activation_dim: int):
         self.activation_dim = activation_dim
