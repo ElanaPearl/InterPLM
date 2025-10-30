@@ -219,9 +219,10 @@ class ReLUSAE(Dictionary):
             )  # note that this only applies the decoder weight matrix, no bias
             x_hat = self.decode(f)
 
-            # Un-normalize both outputs
-            x_ghost = self._unnormalize_output(x_ghost, original_norms)
-            x_hat = self._unnormalize_output(x_hat, original_norms)
+            # Only un-normalize if explicitly requested
+            if unnormalize:
+                x_ghost = self._unnormalize_output(x_ghost, original_norms)
+                x_hat = self._unnormalize_output(x_hat, original_norms)
 
             if output_features:
                 return x_hat, x_ghost, f
