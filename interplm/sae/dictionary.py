@@ -161,6 +161,9 @@ class ReLUSAE(Dictionary):
         self.bias = nn.Parameter(t.zeros(activation_dim))
         self.encoder = nn.Linear(activation_dim, dict_size, bias=True)
 
+        # Initialize encoder bias to zero
+        nn.init.zeros_(self.encoder.bias)
+
         # rows of decoder weight matrix are unit vectors
         self.decoder = nn.Linear(dict_size, activation_dim, bias=False)
         dec_weight = t.randn_like(self.decoder.weight)
@@ -244,10 +247,7 @@ class ReLUSAE(Dictionary):
         state_dict = t.load(path, map_location=device)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
 
-        # Check if normalize_to_sqrt_d was saved in the state dict
-        normalize_to_sqrt_d = False
-        if "normalize_to_sqrt_d" in state_dict:
-            normalize_to_sqrt_d = state_dict["normalize_to_sqrt_d"].item()
+        normalize_to_sqrt_d = state_dict.get("normalize_to_sqrt_d", t.tensor(False)).item()
 
         autoencoder = ReLUSAE(activation_dim, dict_size, normalize_to_sqrt_d=normalize_to_sqrt_d)
         autoencoder.load_state_dict(state_dict)
@@ -259,6 +259,7 @@ class ReLUSAE(Dictionary):
 class IdentityDict(Dictionary, nn.Module):
     """
     An identity dictionary, i.e. the identity function. This is useful for treating neurons as features.
+
     """
 
     def __init__(self, activation_dim=None, normalize_to_sqrt_d=False):
@@ -266,13 +267,20 @@ class IdentityDict(Dictionary, nn.Module):
         self.activation_dim = activation_dim
         self.dict_size = activation_dim
 
+        # Use nn.Identity for both encoder and decoder
+        self.encoder = nn.Identity()
+        self.decoder = nn.Identity()
+
+        self.register_buffer("activation_rescale_factor", t.ones(activation_dim) if activation_dim else t.tensor([]))
+
     def encode(self, x, normalize_features: bool = False):
+        x = self.encoder(x)
         if normalize_features:
             x = x / self.activation_rescale_factor
         return x
 
     def decode(self, f):
-        return f
+        return self.decoder(f)
 
     @t.no_grad()
     def encode_feat_subset(self, x, feat_list, normalize_features: bool = False):
@@ -376,10 +384,7 @@ class ReLUSAE_Tied(Dictionary, nn.Module):
         state_dict = t.load(path, map_location=device)
         dict_size, activation_dim = state_dict["encoder.weight"].shape
 
-        # Check if normalize_to_sqrt_d was saved in the state dict
-        normalize_to_sqrt_d = False
-        if "normalize_to_sqrt_d" in state_dict:
-            normalize_to_sqrt_d = state_dict["normalize_to_sqrt_d"].item()
+        normalize_to_sqrt_d = state_dict.get("normalize_to_sqrt_d", t.tensor(False)).item()
 
         autoencoder = ReLUSAE_Tied(activation_dim, dict_size, normalize_to_sqrt_d=normalize_to_sqrt_d)
         autoencoder.load_state_dict(state_dict)
@@ -513,10 +518,7 @@ class TopKSAE(Dictionary, nn.Module):
         elif "k" in state_dict and k != state_dict["k"].item():
             raise ValueError(f"k={k} != {state_dict['k'].item()}=state_dict['k']")
 
-        # Check if normalize_to_sqrt_d was saved in the state dict
-        normalize_to_sqrt_d = False
-        if "normalize_to_sqrt_d" in state_dict:
-            normalize_to_sqrt_d = state_dict["normalize_to_sqrt_d"].item()
+        normalize_to_sqrt_d = state_dict.get("normalize_to_sqrt_d", t.tensor(False)).item()
 
         autoencoder = TopKSAE(activation_dim, dict_size, k, normalize_to_sqrt_d=normalize_to_sqrt_d)
         autoencoder.load_state_dict(state_dict)
@@ -534,33 +536,40 @@ class JumpReLUSAE(Dictionary, nn.Module):
         super().__init__(normalize_to_sqrt_d)
         self.activation_dim = activation_dim
         self.dict_size = dict_size
-        self.W_enc = nn.Parameter(t.empty(activation_dim, dict_size, device=device))
-        self.b_enc = nn.Parameter(t.zeros(dict_size, device=device))
-        self.W_dec = nn.Parameter(
-            t.nn.init.kaiming_uniform_(
-                t.empty(dict_size, activation_dim, device=device)
-            )
-        )
-        self.b_dec = nn.Parameter(t.zeros(activation_dim, device=device))
+
+        # Use standard encoder/decoder naming
+        self.encoder = nn.Linear(activation_dim, dict_size, bias=True)
+        self.decoder = nn.Linear(dict_size, activation_dim, bias=True)
+
+        # Initialize decoder weights with kaiming uniform, then normalize to unit norm
+        # Note: nn.Linear stores weights as (out_features, in_features) = (activation_dim, dict_size)
+        # We normalize along dim=0 so each feature (column) has unit norm
+        nn.init.kaiming_uniform_(self.decoder.weight)
+        self.decoder.weight.data = self.decoder.weight.data / self.decoder.weight.data.norm(dim=0, keepdim=True)
+
+        # Initialize encoder as decoder transpose
+        self.encoder.weight.data = self.decoder.weight.data.clone().T
+
+        # Initialize biases to zero
+        nn.init.zeros_(self.encoder.bias)
+        nn.init.zeros_(self.decoder.bias)
+
         self.threshold = nn.Parameter(
             t.ones(dict_size, device=device) * 0.001
         )  # Appendix I
 
         self.apply_b_dec_to_input = False
 
-        self.W_dec.data = self.W_dec / self.W_dec.norm(dim=1, keepdim=True)
-        self.W_enc.data = self.W_dec.data.clone().T
-
         self.register_buffer("activation_rescale_factor", t.ones(dict_size))
         self._make_contiguous()
 
     def encode(self, x, output_pre_jump=False, normalize_features: bool = False):
         if self.apply_b_dec_to_input:
-            x = x - self.b_dec
-        pre_jump = x @ self.W_enc + self.b_enc
+            x = x - self.decoder.bias
+        pre_jump = self.encoder(x)
 
         f = nn.ReLU()(pre_jump * (pre_jump > self.threshold))
-        
+
         if normalize_features:
             f /= self.activation_rescale_factor
 
@@ -570,7 +579,7 @@ class JumpReLUSAE(Dictionary, nn.Module):
             return f
 
     def decode(self, f):
-        return f @ self.W_dec + self.b_dec
+        return self.decoder(f)
 
     def forward(self, x, output_features=False):
         """
@@ -593,15 +602,17 @@ class JumpReLUSAE(Dictionary, nn.Module):
             return x_hat
 
     def scale_biases(self, scale: float):
-        self.b_dec.data *= scale
-        self.b_enc.data *= scale
+        self.decoder.bias.data *= scale
+        self.encoder.bias.data *= scale
         self.threshold.data *= scale
 
     @t.no_grad()
     def encode_feat_subset(self, x, feat_list, normalize_features: bool = False):
         if self.apply_b_dec_to_input:
-            x = x - self.b_dec
-        pre_jump = x @ self.W_enc[:, feat_list] + self.b_enc[feat_list]
+            x = x - self.decoder.bias
+        encoder_w_subset = self.encoder.weight[feat_list, :]
+        encoder_b_subset = self.encoder.bias[feat_list]
+        pre_jump = x @ encoder_w_subset.T + encoder_b_subset
         features = nn.ReLU()(pre_jump * (pre_jump > self.threshold[feat_list]))
         if normalize_features:
             features /= self.activation_rescale_factor[feat_list]
@@ -611,30 +622,24 @@ class JumpReLUSAE(Dictionary, nn.Module):
     def from_pretrained(
         cls,
         path: str | None = None,
-        load_from_sae_lens: bool = False,
         dtype: t.dtype = t.float32,
         device: t.device | None = None,
         **kwargs,
     ):
         """
         Load a pretrained autoencoder from a file.
-        If sae_lens=True, then pass **kwargs to sae_lens's
-        loading function.
         """
         state_dict = t.load(path, map_location=device)
-        activation_dim, dict_size = state_dict["W_enc"].shape
-        
-        # Check if normalize_to_sqrt_d was saved in the state dict
-        normalize_to_sqrt_d = False
-        if "normalize_to_sqrt_d" in state_dict:
-            normalize_to_sqrt_d = state_dict["normalize_to_sqrt_d"].item()
-        
+        dict_size, activation_dim = state_dict["encoder.weight"].shape
+
+        normalize_to_sqrt_d = state_dict.get("normalize_to_sqrt_d", t.tensor(False)).item()
+
         autoencoder = JumpReLUSAE(activation_dim, dict_size, normalize_to_sqrt_d=normalize_to_sqrt_d)
         autoencoder.load_state_dict(state_dict)
         autoencoder = autoencoder.to(dtype=dtype, device=device)
 
         if device is not None:
-            device = autoencoder.W_enc.device
+            device = autoencoder.encoder.weight.device
         return autoencoder.to(dtype=dtype, device=device)
 
 
@@ -772,12 +777,8 @@ class BatchTopKSAE(Dictionary, nn.Module):
             ), f"threshold={threshold} != {state_dict['threshold'].item()}=state_dict['threshold']"
 
         dict_size, activation_dim = state_dict["encoder.weight"].shape
-        
-        # Check if normalize_to_sqrt_d was saved in the state dict
-        normalize_to_sqrt_d = False
-        if "normalize_to_sqrt_d" in state_dict:
-            normalize_to_sqrt_d = state_dict["normalize_to_sqrt_d"].item()
-        
+        normalize_to_sqrt_d = state_dict.get("normalize_to_sqrt_d", t.tensor(False)).item()
+
         autoencoder = BatchTopKSAE(
             activation_dim=activation_dim, dict_size=dict_size, k=k, normalize_to_sqrt_d=normalize_to_sqrt_d
         ).to(device=device)
