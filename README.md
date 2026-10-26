@@ -17,7 +17,7 @@ git clone https://github.com/ElanaPearl/interPLM.git
 cd interPLM
 
 # Create and activate conda environment
-conda env create -f environment.yml
+conda env create -f env.yml
 conda activate interplm
 
 # Install package

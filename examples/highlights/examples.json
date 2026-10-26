@@ -1,0 +1,8 @@
+[
+  {"name": "kinase_catalytic_loop", "feature": 8704, "desc": "protein kinase catalytic loop (HRD..D)",
+   "proteins": ["P17612", "P24941", "P12931"]},
+  {"name": "nudix_box", "feature": 939, "desc": "Nudix box conserved position",
+   "proteins": ["B2GFH1", "P08337", "P36639"]},
+  {"name": "glycosyltransferase_nucleotide_sugar", "feature": 9047, "desc": "glycosyltransferase nucleotide-sugar binding",
+   "proteins": ["Q46638", "P25740", "P17443"]}
+]
